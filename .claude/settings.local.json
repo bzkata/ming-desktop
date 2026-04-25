@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git remote:*)",
+      "Bash(git init:*)",
+      "Bash(git -C /Users/bloks/bzdev/playground/ming-desktop remote add origin git@github.com:bzkata/ming-desktop.git)"
+    ]
+  }
+}

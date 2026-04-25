@@ -1,0 +1,70 @@
+import { contextBridge, ipcRenderer } from 'electron';
+import { IPCChannels } from '../shared/ipc-channels';
+
+// 暴露安全的 API 给渲染进程
+contextBridge.exposeInMainWorld('electronAPI', {
+  // 插件 API
+  plugins: {
+    list: () => ipcRenderer.invoke(IPCChannels.PLUGIN_LIST),
+    execute: (pluginId: string, params: any) =>
+      ipcRenderer.invoke(IPCChannels.PLUGIN_EXECUTE, pluginId, params),
+  },
+
+  // Agent API
+  agents: {
+    create: (config: any) => ipcRenderer.invoke(IPCChannels.AGENT_CREATE, config),
+    chat: (agentId: string, message: string) =>
+      ipcRenderer.invoke(IPCChannels.AGENT_CHAT, agentId, message),
+    list: () => ipcRenderer.invoke(IPCChannels.AGENT_LIST),
+  },
+
+  // LLM API
+  llm: {
+    listProviders: () => ipcRenderer.invoke(IPCChannels.LLM_LIST_PROVIDERS),
+    chat: (providerId: string, messages: any[]) =>
+      ipcRenderer.invoke(IPCChannels.LLM_CHAT, providerId, messages),
+    addProvider: (config: any) => ipcRenderer.invoke(IPCChannels.LLM_ADD_PROVIDER, config),
+  },
+
+  // 执行 API
+  executor: {
+    executeCommand: (command: string, options?: any) =>
+      ipcRenderer.invoke(IPCChannels.EXECUTE_COMMAND, command, options),
+    executeScript: (script: string, args?: any) =>
+      ipcRenderer.invoke(IPCChannels.EXECUTE_SCRIPT, script, args),
+  },
+
+  // 配置 API
+  config: {
+    get: (key: string) => ipcRenderer.invoke(IPCChannels.CONFIG_GET, key),
+    set: (key: string, value: any) => ipcRenderer.invoke(IPCChannels.CONFIG_SET, key, value),
+    getAll: () => ipcRenderer.invoke(IPCChannels.CONFIG_GET_ALL),
+  },
+});
+
+// 类型定义
+export interface ElectronAPI {
+  plugins: {
+    list: () => Promise<any[]>;
+    execute: (pluginId: string, params: any) => Promise<any>;
+  };
+  agents: {
+    create: (config: any) => Promise<string>;
+    chat: (agentId: string, message: string) => Promise<string>;
+    list: () => Promise<any[]>;
+  };
+  llm: {
+    listProviders: () => Promise<any[]>;
+    chat: (providerId: string, messages: any[]) => Promise<string>;
+    addProvider: (config: any) => Promise<void>;
+  };
+  executor: {
+    executeCommand: (command: string, options?: any) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
+    executeScript: (script: string, args?: any) => Promise<any>;
+  };
+  config: {
+    get: (key: string) => Promise<any>;
+    set: (key: string, value: any) => Promise<void>;
+    getAll: () => Promise<any>;
+  };
+}
