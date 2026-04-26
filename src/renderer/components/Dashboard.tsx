@@ -16,12 +16,16 @@ export default function Dashboard() {
     setReport('');
 
     try {
+      const workPaths = (await window.electronAPI.config.get('workPaths')) as
+        | { bzdevBkdev?: string; bzdevExdev?: string }
+        | undefined;
+      const repoPaths = [workPaths?.bzdevBkdev, workPaths?.bzdevExdev].filter(
+        (p): p is string => Boolean(p && String(p).trim())
+      );
+
       const result = await window.electronAPI.plugins.execute('daily-report', {
         timeRange,
-        repoPaths: [
-          '~/bzdev/bkdev',
-          '~/bzdev/exdev'
-        ],
+        repoPaths: repoPaths.length > 0 ? repoPaths : ['~/bzdev/bkdev', '~/bzdev/exdev'],
         includeAllBranches: true
       });
 

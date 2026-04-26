@@ -1,5 +1,9 @@
 import Store from 'electron-store';
 import { AppConfig } from '../../shared/types';
+import {
+  DEFAULT_DAILY_REPORT_TEMPLATE,
+  DEFAULT_DAILY_REPORTER_SYSTEM_PROMPT
+} from '../../shared/dailyReportDefaults';
 import { Logger } from '../utils/Logger';
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -10,6 +14,8 @@ const DEFAULT_CONFIG: AppConfig = {
     bzdevBkdev: '~/bzdev/bkdev',
     bzdevExdev: '~/bzdev/exdev'
   },
+  dailyReportTemplate: DEFAULT_DAILY_REPORT_TEMPLATE,
+  dailyReporterSystemPrompt: DEFAULT_DAILY_REPORTER_SYSTEM_PROMPT,
   plugins: {},
   agents: [],
   llmProviders: []
@@ -37,7 +43,7 @@ export class ConfigManager {
   }
 
   get<T>(key: string, defaultValue?: T): T {
-    return this.store.get(key as keyof AppConfig, defaultValue) as T;
+    return this.store.get(key as keyof AppConfig, defaultValue as never) as T;
   }
 
   async set<T>(key: string, value: T): Promise<void> {

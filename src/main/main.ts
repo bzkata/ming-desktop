@@ -57,17 +57,17 @@ async function initializeServices(): Promise<void> {
   llmManager = new LLMProviderManager(configManager);
   await llmManager.initialize();
 
+  // 初始化执行服务（插件执行日报脚本依赖此项）
+  executorService = new ExecutorService(configManager);
+  await executorService.initialize();
+
   // 初始化插件管理器
   pluginManager = new PluginManager(configManager, executorService);
   await pluginManager.initialize();
 
   // 初始化 Agent 管理器
-  agentManager = new AgentManager(llmManager, pluginManager);
+  agentManager = new AgentManager(configManager, llmManager, pluginManager);
   await agentManager.initialize();
-
-  // 初始化执行服务
-  executorService = new ExecutorService(configManager);
-  await executorService.initialize();
 
   Logger.info('All services initialized successfully');
 }

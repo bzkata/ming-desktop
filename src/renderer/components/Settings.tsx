@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Save, RotateCcw, Key, Settings as SettingsIcon, Palette, Globe } from 'lucide-react';
+import { Save, RotateCcw, Key, Settings as SettingsIcon, Palette, Globe, FileText } from 'lucide-react';
 import LLMConfiguration from './LLMConfiguration';
+import {
+  DEFAULT_DAILY_REPORT_TEMPLATE,
+  DEFAULT_DAILY_REPORTER_SYSTEM_PROMPT
+} from '../../shared/dailyReportDefaults';
 
 export default function Settings() {
   const [theme, setTheme] = useState<'light' | 'dark' | 'auto'>('dark');
@@ -10,6 +14,10 @@ export default function Settings() {
     bzdevBkdev: '~/bzdev/bkdev',
     bzdevExdev: '~/bzdev/exdev'
   });
+  const [dailyReportTemplate, setDailyReportTemplate] = useState(DEFAULT_DAILY_REPORT_TEMPLATE);
+  const [dailyReporterSystemPrompt, setDailyReporterSystemPrompt] = useState(
+    DEFAULT_DAILY_REPORTER_SYSTEM_PROMPT
+  );
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -25,6 +33,16 @@ export default function Settings() {
       if (config.workPaths) {
         setWorkPaths(config.workPaths);
       }
+      if (config.dailyReportTemplate) {
+        setDailyReportTemplate(config.dailyReportTemplate);
+      } else {
+        setDailyReportTemplate(DEFAULT_DAILY_REPORT_TEMPLATE);
+      }
+      if (config.dailyReporterSystemPrompt) {
+        setDailyReporterSystemPrompt(config.dailyReporterSystemPrompt);
+      } else {
+        setDailyReporterSystemPrompt(DEFAULT_DAILY_REPORTER_SYSTEM_PROMPT);
+      }
     } catch (error) {
       console.error('Failed to load settings:', error);
     }
@@ -37,6 +55,8 @@ export default function Settings() {
       await window.electronAPI.config.set('language', language);
       await window.electronAPI.config.set('autoUpdate', autoUpdate);
       await window.electronAPI.config.set('workPaths', workPaths);
+      await window.electronAPI.config.set('dailyReportTemplate', dailyReportTemplate);
+      await window.electronAPI.config.set('dailyReporterSystemPrompt', dailyReporterSystemPrompt);
       // 可以添加成功提示
     } catch (error) {
       console.error('Failed to save settings:', error);
@@ -55,6 +75,11 @@ export default function Settings() {
           bzdevBkdev: '~/bzdev/bkdev',
           bzdevExdev: '~/bzdev/exdev'
         });
+        await window.electronAPI.config.set('dailyReportTemplate', DEFAULT_DAILY_REPORT_TEMPLATE);
+        await window.electronAPI.config.set(
+          'dailyReporterSystemPrompt',
+          DEFAULT_DAILY_REPORTER_SYSTEM_PROMPT
+        );
         await loadSettings();
       } catch (error) {
         console.error('Failed to reset settings:', error);
@@ -179,6 +204,46 @@ export default function Settings() {
                 }
                 className="input"
                 placeholder="~/bzdev/exdev"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Daily report prompts */}
+        <div className="card mb-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-2 bg-cyan-500/20 rounded-lg">
+              <FileText className="text-cyan-400" size={20} />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold">日报提示词与模板</h2>
+              <p className="text-sm text-gray-400">
+                下方模板用于从 Git 生成 Markdown 日报；系统提示词用于「Daily Reporter」对话 Agent
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">日报 Markdown 模板</label>
+              <p className="text-xs text-gray-500 mb-2">
+                占位符：{'{date}'} {'{total_commits}'} {'{total_repos}'} {'{work_hours}'} {'{commit_details}'}{' '}
+                {'{stats}'} {'{generated_at}'}
+              </p>
+              <textarea
+                value={dailyReportTemplate}
+                onChange={(e) => setDailyReportTemplate(e.target.value)}
+                className="input font-mono text-sm min-h-[220px] w-full"
+                spellCheck={false}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-2">Daily Reporter 系统提示词</label>
+              <textarea
+                value={dailyReporterSystemPrompt}
+                onChange={(e) => setDailyReporterSystemPrompt(e.target.value)}
+                className="input font-mono text-sm min-h-[120px] w-full"
+                spellCheck={false}
               />
             </div>
           </div>

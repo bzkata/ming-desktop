@@ -27,7 +27,7 @@ export class ExecutorService {
       Logger.info(`Executing command: ${command}`);
 
       const [cmd, ...args] = command.split(' ');
-      const process = spawn(cmd, args, {
+      const child = spawn(cmd, args, {
         cwd,
         env: { ...process.env, ...env },
         shell: true
@@ -36,20 +36,20 @@ export class ExecutorService {
       let stdout = '';
       let stderr = '';
 
-      process.stdout?.on('data', (data) => {
+      child.stdout?.on('data', (data) => {
         stdout += data.toString();
       });
 
-      process.stderr?.on('data', (data) => {
+      child.stderr?.on('data', (data) => {
         stderr += data.toString();
       });
 
       const timeoutHandle = setTimeout(() => {
-        process.kill();
+        child.kill();
         reject(new Error(`Command timed out after ${timeout}ms`));
       }, timeout);
 
-      process.on('close', (code) => {
+      child.on('close', (code) => {
         clearTimeout(timeoutHandle);
         const duration = Date.now() - startTime;
 
@@ -65,7 +65,7 @@ export class ExecutorService {
         resolve(result);
       });
 
-      process.on('error', (error) => {
+      child.on('error', (error) => {
         clearTimeout(timeoutHandle);
         Logger.error('Command execution error:', error);
         reject(error);
@@ -114,15 +114,15 @@ export class ExecutorService {
     Logger.info(`Starting background process: ${command} (name: ${name})`);
 
     const [cmd, ...args] = command.split(' ');
-    const process = spawn(cmd, args, {
+    const child = spawn(cmd, args, {
       cwd,
       env: { ...process.env, ...env },
       shell: true,
       detached: true
     });
 
-    this.activeProcesses.set(name, process);
-    this.emit('process-started', { name, pid: process.pid });
+    this.activeProcesses.set(name, child);
+    this.emit('process-started', { name, pid: child.pid });
 
     return name;
   }
