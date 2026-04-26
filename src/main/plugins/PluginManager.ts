@@ -177,8 +177,6 @@ export class PluginManager extends EventEmitter {
   }
 
   private async executeDailyReport(params: any): Promise<PluginExecutionResult> {
-    // 获取配置
-    const config = await this.configManager.get('workPaths', {});
     const repoPaths = params.repoPaths || [
       path.join(process.env.HOME || '', 'bzdev', 'bkdev'),
       path.join(process.env.HOME || '', 'bzdev', 'exdev')
@@ -199,7 +197,7 @@ export class PluginManager extends EventEmitter {
         env: {
           REPO_PATHS: repoPaths.join(','),
           TIME_RANGE: params.timeRange || 'today',
-          INCLUDE_ALL_BRANCHES: params.includeAllBranches !== false
+          INCLUDE_ALL_BRANCHES: String(params.includeAllBranches !== false)
         }
       }
     );

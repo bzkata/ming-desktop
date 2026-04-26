@@ -77,7 +77,11 @@ You have access to:
   async createAgent(config: AgentConfig): Promise<string> {
     const agent: Agent = {
       id: `agent-${Date.now()}`,
-      ...config,
+      name: config.name,
+      description: config.description ?? '',
+      model: config.model,
+      systemPrompt: config.systemPrompt,
+      tools: config.tools ?? [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
