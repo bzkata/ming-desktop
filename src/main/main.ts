@@ -53,6 +53,10 @@ async function initializeServices(): Promise<void> {
   configManager = new ConfigManager();
   await configManager.initialize();
 
+  // 初始化执行服务
+  executorService = new ExecutorService(configManager);
+  await executorService.initialize();
+
   // 初始化 LLM Provider 管理器
   llmManager = new LLMProviderManager(configManager);
   await llmManager.initialize();
@@ -64,10 +68,6 @@ async function initializeServices(): Promise<void> {
   // 初始化 Agent 管理器
   agentManager = new AgentManager(llmManager, pluginManager);
   await agentManager.initialize();
-
-  // 初始化执行服务
-  executorService = new ExecutorService(configManager);
-  await executorService.initialize();
 
   Logger.info('All services initialized successfully');
 }
