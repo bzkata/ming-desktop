@@ -15,8 +15,8 @@ let llmManager: LLMProviderManager;
 let executorService: ExecutorService;
 let configManager: ConfigManager;
 
-// 开发环境检测
-const isDev = process.env.NODE_ENV === 'development';
+// 开发环境检测：在 electron 开发模式下 NODE_ENV 可能未设置
+const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -27,6 +27,7 @@ function createWindow(): void {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: false,
       preload: path.join(__dirname, 'preload.js'),
     },
     titleBarStyle: 'hiddenInset',
@@ -34,7 +35,7 @@ function createWindow(): void {
   });
 
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173');
+    mainWindow.loadURL('http://localhost:5174');
     mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
