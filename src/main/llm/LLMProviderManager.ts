@@ -57,12 +57,23 @@ export class LLMProviderManager extends EventEmitter {
     return Array.from(this.providers.values());
   }
 
-  async addProvider(config: LLMProviderConfig): Promise<void> {
+  getDefaultProviderId(): string | null {
+    const configured = this.configManager.get('defaultLLMProvider') as string | undefined;
+    if (configured && this.providers.has(configured) && this.providers.get(configured)!.enabled) {
+      return configured;
+    }
+    const first = Array.from(this.providers.values()).find(p => p.enabled);
+    return first?.id ?? null;
+  }
+
+  async addProvider(config: LLMProviderConfig): Promise<LLMProvider> {
     const provider: LLMProvider = {
       id: `provider-${Date.now()}`,
       ...config,
       enabled: true,
-      models: config.models || this.getDefaultModels(config.type)
+      models: config.models?.length
+        ? config.models
+        : this.getDefaultModels(config.type)
     };
 
     this.providers.set(provider.id, provider);
@@ -77,6 +88,7 @@ export class LLMProviderManager extends EventEmitter {
 
     this.emit('provider-added', provider);
     Logger.info(`LLM provider added: ${provider.name}`);
+    return provider;
   }
 
   async removeProvider(providerId: string): Promise<void> {
@@ -84,6 +96,11 @@ export class LLMProviderManager extends EventEmitter {
     if (provider) {
       this.providers.delete(providerId);
       this.clients.delete(providerId);
+
+      const currentDefault = this.configManager.get('defaultLLMProvider') as string | undefined;
+      if (currentDefault === providerId) {
+        this.configManager.delete('defaultLLMProvider');
+      }
 
       // 保存到配置
       const allProviders = Array.from(this.providers.values());
@@ -101,7 +118,12 @@ export class LLMProviderManager extends EventEmitter {
       this.providers.set(providerId, updated);
 
       // 重新初始化客户端如果配置改变
-      if (updates.apiKey || updates.baseURL || updates.type) {
+      if (
+        updates.apiKey !== undefined ||
+        updates.baseURL !== undefined ||
+        updates.type !== undefined ||
+        updates.enabled !== undefined
+      ) {
         this.clients.delete(providerId);
         if (updated.enabled) {
           await this.initializeProviderClient(updated);
@@ -186,10 +208,12 @@ export class LLMProviderManager extends EventEmitter {
         return ['gpt-4', 'gpt-4-turbo-preview', 'gpt-3.5-turbo'];
       case 'anthropic':
         return ['claude-3-opus-20240229', 'claude-3-sonnet-20240229', 'claude-3-haiku-20240307'];
+      case 'custom':
+        return ['gpt-4', 'gpt-3.5-turbo'];
       case 'local':
         return ['llama-2-7b', 'mistral-7b'];
       default:
-        return [];
+        return ['gpt-4'];
     }
   }
 }

@@ -24,6 +24,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     chat: (providerId: string, messages: any[]) =>
       ipcRenderer.invoke(IPCChannels.LLM_CHAT, providerId, messages),
     addProvider: (config: any) => ipcRenderer.invoke(IPCChannels.LLM_ADD_PROVIDER, config),
+    removeProvider: (providerId: string) =>
+      ipcRenderer.invoke(IPCChannels.LLM_REMOVE_PROVIDER, providerId),
+    updateProvider: (providerId: string, updates: any) =>
+      ipcRenderer.invoke(IPCChannels.LLM_UPDATE_PROVIDER, providerId, updates),
   },
 
   // 执行 API
@@ -56,7 +60,9 @@ export interface ElectronAPI {
   llm: {
     listProviders: () => Promise<any[]>;
     chat: (providerId: string, messages: any[]) => Promise<string>;
-    addProvider: (config: any) => Promise<void>;
+    addProvider: (config: any) => Promise<any>;
+    removeProvider: (providerId: string) => Promise<void>;
+    updateProvider: (providerId: string, updates: any) => Promise<void>;
   };
   executor: {
     executeCommand: (command: string, options?: any) => Promise<{ stdout: string; stderr: string; exitCode: number }>;

@@ -115,14 +115,12 @@ You have access to:
     ];
 
     try {
-      // 获取默认 provider（或让用户选择）
-      const providers = this.llmManager.listProviders();
-      if (providers.length === 0) {
+      const providerId = this.llmManager.getDefaultProviderId();
+      if (!providerId) {
         throw new Error('No LLM providers configured');
       }
 
-      const defaultProvider = providers[0];
-      const response = await this.llmManager.chat(defaultProvider.id, messages);
+      const response = await this.llmManager.chat(providerId, messages);
 
       // 添加助手回复
       const assistantMsg: ChatMessage = {

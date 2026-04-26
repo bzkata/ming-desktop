@@ -19,7 +19,9 @@ interface ElectronAPI {
   llm: {
     listProviders: () => Promise<any[]>;
     chat: (providerId: string, messages: any[]) => Promise<string>;
-    addProvider: (config: any) => Promise<void>;
+    addProvider: (config: any) => Promise<any>;
+    removeProvider: (providerId: string) => Promise<void>;
+    updateProvider: (providerId: string, updates: any) => Promise<void>;
   };
   executor: {
     executeCommand: (command: string, options?: any) => Promise<{ stdout: string; stderr: string; exitCode: number }>;

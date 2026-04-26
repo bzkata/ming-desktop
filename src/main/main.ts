@@ -108,6 +108,14 @@ function setupIPCHandlers(): void {
     return llmManager.addProvider(config);
   });
 
+  ipcMain.handle(IPCChannels.LLM_REMOVE_PROVIDER, async (_, providerId: string) => {
+    return llmManager.removeProvider(providerId);
+  });
+
+  ipcMain.handle(IPCChannels.LLM_UPDATE_PROVIDER, async (_, providerId: string, updates: any) => {
+    return llmManager.updateProvider(providerId, updates);
+  });
+
   // 执行服务相关
   ipcMain.handle(IPCChannels.EXECUTE_COMMAND, async (_, command: string, options?: any) => {
     return executorService.executeCommand(command, options);

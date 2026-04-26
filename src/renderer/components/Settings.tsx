@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Save, RotateCcw, Key, Settings as SettingsIcon, Palette, Globe } from 'lucide-react';
+import LLMConfiguration from './LLMConfiguration';
 
 export default function Settings() {
   const [theme, setTheme] = useState<'light' | 'dark' | 'auto'>('dark');
@@ -191,17 +192,11 @@ export default function Settings() {
             </div>
             <div>
               <h2 className="text-lg font-semibold">LLM Configuration</h2>
-              <p className="text-sm text-gray-400">Configure AI model providers</p>
+              <p className="text-sm text-gray-400">API keys, models, and default provider for Agent chat</p>
             </div>
           </div>
 
-          <div className="text-center py-8 text-gray-400">
-            <Key size={48} className="mx-auto mb-4 opacity-50" />
-            <p>No LLM providers configured yet</p>
-            <button className="btn-primary mt-4">
-              Add Provider
-            </button>
-          </div>
+          <LLMConfiguration />
         </div>
 
         {/* Actions */}
