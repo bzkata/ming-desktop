@@ -9,12 +9,19 @@ Daily Work Report Generator - 优化版
 """
 
 import subprocess
-import json
 from datetime import datetime, timedelta
 from pathlib import Path
 import os
 import sys
 import time
+
+
+def _apply_report_template(template: str, **placeholders: str) -> str:
+    """按键替换占位符，避免用户模板中含 {{}} 时 str.format 报错。"""
+    out = template
+    for key, val in placeholders.items():
+        out = out.replace("{" + key + "}", str(val))
+    return out
 
 # 配置区域
 CONFIG = {
@@ -343,15 +350,16 @@ def generate_report(config=None):
     # 格式化报告
     details, stats = format_report(all_commits, datetime.now().strftime("%Y-%m-%d"))
 
-    # 填充模板
-    report = config["template"].format(
+    # 填充模板（占位符：date, total_commits, total_repos, work_hours, commit_details, stats, generated_at）
+    report = _apply_report_template(
+        config["template"],
         date=datetime.now().strftime("%Y年%m月%d日"),
-        total_commits=len(all_commits),
-        total_repos=len(set(c["repo"] for c in all_commits)),
-        work_hours=round(len(all_commits) * 0.5, 1),  # 估算：每个提交约0.5小时
+        total_commits=str(len(all_commits)),
+        total_repos=str(len(set(c["repo"] for c in all_commits))),
+        work_hours=str(round(len(all_commits) * 0.5, 1)),
         commit_details=details,
         stats=stats,
-        generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     )
 
     return report
@@ -376,18 +384,58 @@ def save_report(report, config=None):
     return str(filepath)
 
 
+def _config_from_env():
+    """从环境变量合并配置（由 Electron 插件注入）。"""
+    cfg = {**CONFIG}
+
+    repo_csv = os.environ.get("REPO_PATHS", "").strip()
+    if repo_csv:
+        cfg["base_paths"] = [p.strip() for p in repo_csv.split(",") if p.strip()]
+
+    tr = os.environ.get("TIME_RANGE", "").strip().lower()
+    if tr in ("today", "yesterday", "week"):
+        cfg["time_range"] = tr
+
+    iab = os.environ.get("INCLUDE_ALL_BRANCHES", "").strip().lower()
+    if iab in ("0", "false", "no"):
+        cfg["include_all_branches"] = False
+    elif iab in ("1", "true", "yes"):
+        cfg["include_all_branches"] = True
+
+    author = os.environ.get("FILTER_BY_AUTHOR", "").strip()
+    if author:
+        cfg["filter_by_author"] = author
+    elif "FILTER_BY_AUTHOR" in os.environ:
+        cfg["filter_by_author"] = None
+
+    tmpl = os.environ.get("DAILY_REPORT_TEMPLATE", "").strip()
+    if tmpl:
+        cfg["template"] = tmpl
+
+    out_dir = os.environ.get("DAILY_REPORT_OUTPUT_DIR", "").strip()
+    if out_dir:
+        cfg["output_dir"] = out_dir
+
+    fmt = os.environ.get("DAILY_REPORT_OUTPUT_FORMAT", "").strip().lower()
+    if fmt in ("markdown", "txt", "json"):
+        cfg["output_format"] = fmt
+
+    return cfg
+
+
 def main():
     """主函数"""
     print("🚀 正在生成日报...")
     print("="*60)
 
     total_start = time.time()
+    runtime_config = _config_from_env()
 
     # 生成报告
-    report = generate_report(CONFIG)
+    report = generate_report(runtime_config)
 
     # 保存报告
-    filepath = save_report(report, CONFIG)
+    filepath = save_report(report, runtime_config)
 
     total_time = time.time() - total_start
 

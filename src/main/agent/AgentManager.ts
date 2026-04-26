@@ -1,14 +1,17 @@
 import { EventEmitter } from 'events';
 import { Agent, AgentConfig, ChatMessage } from '../../shared/types';
+import { DEFAULT_DAILY_REPORTER_SYSTEM_PROMPT } from '../../shared/dailyReportDefaults';
 import { Logger } from '../utils/Logger';
 import { LLMProviderManager } from '../llm/LLMProviderManager';
 import { PluginManager } from '../plugins/PluginManager';
+import { ConfigManager } from '../services/ConfigManager';
 
 export class AgentManager extends EventEmitter {
   private agents: Map<string, Agent> = new Map();
   private chatHistories: Map<string, ChatMessage[]> = new Map();
 
   constructor(
+    private configManager: ConfigManager,
     private llmManager: LLMProviderManager,
     private pluginManager: PluginManager
   ) {
@@ -28,6 +31,10 @@ export class AgentManager extends EventEmitter {
   }
 
   private async createDefaultAgents(): Promise<void> {
+    const dailyReporterPrompt =
+      (this.configManager.get('dailyReporterSystemPrompt') as string | undefined)?.trim() ||
+      DEFAULT_DAILY_REPORTER_SYSTEM_PROMPT;
+
     const defaultAgents: AgentConfig[] = [
       {
         name: 'Code Assistant',
@@ -47,12 +54,7 @@ When appropriate, use these tools to help users more effectively.`,
         name: 'Daily Reporter',
         description: 'Generate daily work reports from Git commits',
         model: 'gpt-4',
-        systemPrompt: `You are a daily report generator. You help users create professional daily work reports based on their Git commit history.
-Focus on:
-- Clear, concise descriptions of work done
-- Proper categorization by project
-- Highlighting important achievements
-- Maintaining a professional tone`,
+        systemPrompt: dailyReporterPrompt,
         tools: ['daily-report', 'git']
       },
       {
@@ -78,6 +80,8 @@ You have access to:
     const agent: Agent = {
       id: `agent-${Date.now()}`,
       ...config,
+      description: config.description ?? '',
+      tools: config.tools ?? [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -108,9 +112,15 @@ You have access to:
     };
     history.push(userMsg);
 
+    const systemContent =
+      agent.name === 'Daily Reporter'
+        ? (this.configManager.get('dailyReporterSystemPrompt') as string | undefined)?.trim() ||
+          agent.systemPrompt
+        : agent.systemPrompt;
+
     // 准备发送给 LLM 的消息
     const messages: ChatMessage[] = [
-      { role: 'system', content: agent.systemPrompt },
+      { role: 'system', content: systemContent },
       ...history.slice(-10) // 保留最近10条消息
     ];
 

@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { Plugin, PluginExecutionResult, PluginConfig } from '../../shared/types';
+import { DEFAULT_DAILY_REPORT_TEMPLATE } from '../../shared/dailyReportDefaults';
 import { Logger } from '../utils/Logger';
 import { ExecutorService } from '../services/ExecutorService';
 import { ConfigManager } from '../services/ConfigManager';
@@ -177,32 +178,47 @@ export class PluginManager extends EventEmitter {
   }
 
   private async executeDailyReport(params: any): Promise<PluginExecutionResult> {
-    // 获取配置
-    const config = await this.configManager.get('workPaths', {});
-    const repoPaths = params.repoPaths || [
-      path.join(process.env.HOME || '', 'bzdev', 'bkdev'),
-      path.join(process.env.HOME || '', 'bzdev', 'exdev')
-    ];
+    const workPaths = this.configManager.get('workPaths', {}) as Record<string, string>;
+    const home = process.env.HOME || '';
+
+    const repoPaths: string[] =
+      params.repoPaths && params.repoPaths.length > 0
+        ? params.repoPaths
+        : [workPaths.bzdevBkdev, workPaths.bzdevExdev].filter(Boolean);
+
+    const reportTemplate =
+      (this.configManager.get('dailyReportTemplate') as string | undefined)?.trim() ||
+      DEFAULT_DAILY_REPORT_TEMPLATE;
+
+    const outputDir = params.outputDir
+      ? path.resolve(params.outputDir.replace(/^~(?=\/|$)/, home))
+      : path.join(home, 'daily-reports');
 
     // 构建Python脚本路径
     const scriptPath = path.join(__dirname, '../../scripts/generate_daily_report.py');
 
-    // 执行脚本
     if (!this.executorService) {
       throw new Error('Executor service not available');
     }
 
-    const result = await this.executorService.executeCommand(
-      `python3 ${scriptPath}`,
-      {
-        cwd: path.join(process.env.HOME || ''),
-        env: {
-          REPO_PATHS: repoPaths.join(','),
-          TIME_RANGE: params.timeRange || 'today',
-          INCLUDE_ALL_BRANCHES: params.includeAllBranches !== false
-        }
-      }
-    );
+    const env: Record<string, string> = {
+      REPO_PATHS: repoPaths.join(','),
+      TIME_RANGE: params.timeRange || 'today',
+      INCLUDE_ALL_BRANCHES: params.includeAllBranches !== false ? 'true' : 'false',
+      DAILY_REPORT_TEMPLATE: reportTemplate,
+      DAILY_REPORT_OUTPUT_DIR: outputDir,
+      DAILY_REPORT_OUTPUT_FORMAT: 'markdown'
+    };
+
+    const author = params.filterByAuthor as string | undefined;
+    if (author && String(author).trim()) {
+      env.FILTER_BY_AUTHOR = String(author).trim();
+    }
+
+    const result = await this.executorService.executeCommand(`python3 ${scriptPath}`, {
+      cwd: home || undefined,
+      env
+    });
 
     if (result.exitCode !== 0) {
       return {
@@ -212,12 +228,8 @@ export class PluginManager extends EventEmitter {
       };
     }
 
-    // 读取生成的报告
-    const reportPath = path.join(
-      process.env.HOME || '',
-      'daily-reports',
-      `daily-report-${new Date().toISOString().split('T')[0]}.markdown`
-    );
+    const today = new Date().toISOString().split('T')[0];
+    const reportPath = path.join(outputDir, `daily-report-${today}.markdown`);
 
     let reportContent = '';
     try {
