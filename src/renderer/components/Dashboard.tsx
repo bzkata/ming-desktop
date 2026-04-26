@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Calendar, Clock, GitBranch, FileText, TrendingUp, Play } from 'lucide-react';
 
 export default function Dashboard() {
@@ -29,7 +29,7 @@ export default function Dashboard() {
         setReport(result.data.report);
         // 解析统计信息（简化版）
         const lines = result.data.report.split('\n');
-        lines.forEach(line => {
+        lines.forEach((line: string) => {
           if (line.includes('提交总数:')) {
             const match = line.match(/提交总数:\s*(\d+)/);
             if (match) setStats(prev => ({ ...prev, totalCommits: parseInt(match[1]) }));

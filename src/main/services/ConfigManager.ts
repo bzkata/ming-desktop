@@ -37,7 +37,7 @@ export class ConfigManager {
   }
 
   get<T>(key: string, defaultValue?: T): T {
-    return this.store.get(key as keyof AppConfig, defaultValue) as T;
+    return this.store.get(key, defaultValue) as T;
   }
 
   async set<T>(key: string, value: T): Promise<void> {

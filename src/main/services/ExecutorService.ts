@@ -1,4 +1,5 @@
 import { spawn, ChildProcess } from 'child_process';
+import nodeProcess from 'process';
 import { Logger } from '../utils/Logger';
 import { ConfigManager } from './ConfigManager';
 import { ExecutionResult } from '../../shared/types';
@@ -27,29 +28,29 @@ export class ExecutorService {
       Logger.info(`Executing command: ${command}`);
 
       const [cmd, ...args] = command.split(' ');
-      const process = spawn(cmd, args, {
+      const childProcess = spawn(cmd, args, {
         cwd,
-        env: { ...process.env, ...env },
+        env: { ...nodeProcess.env, ...env },
         shell: true
       });
 
       let stdout = '';
       let stderr = '';
 
-      process.stdout?.on('data', (data) => {
+      childProcess.stdout?.on('data', (data) => {
         stdout += data.toString();
       });
 
-      process.stderr?.on('data', (data) => {
+      childProcess.stderr?.on('data', (data) => {
         stderr += data.toString();
       });
 
       const timeoutHandle = setTimeout(() => {
-        process.kill();
+        childProcess.kill();
         reject(new Error(`Command timed out after ${timeout}ms`));
       }, timeout);
 
-      process.on('close', (code) => {
+      childProcess.on('close', (code) => {
         clearTimeout(timeoutHandle);
         const duration = Date.now() - startTime;
 
@@ -65,7 +66,7 @@ export class ExecutorService {
         resolve(result);
       });
 
-      process.on('error', (error) => {
+      childProcess.on('error', (error) => {
         clearTimeout(timeoutHandle);
         Logger.error('Command execution error:', error);
         reject(error);
@@ -84,7 +85,7 @@ export class ExecutorService {
     const command = `python3 ${script}`;
     const result = await this.executeCommand(command, {
       env: {
-        ...process.env,
+        ...nodeProcess.env,
         ...args
       }
     });
@@ -114,15 +115,15 @@ export class ExecutorService {
     Logger.info(`Starting background process: ${command} (name: ${name})`);
 
     const [cmd, ...args] = command.split(' ');
-    const process = spawn(cmd, args, {
+    const childProcess = spawn(cmd, args, {
       cwd,
-      env: { ...process.env, ...env },
+      env: { ...nodeProcess.env, ...env },
       shell: true,
       detached: true
     });
 
-    this.activeProcesses.set(name, process);
-    this.emit('process-started', { name, pid: process.pid });
+    this.activeProcesses.set(name, childProcess);
+    this.emit('process-started', { name, pid: childProcess.pid });
 
     return name;
   }
