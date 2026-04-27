@@ -10,10 +10,7 @@ const DEFAULT_CONFIG: AppConfig = {
   theme: 'dark',
   language: 'zh-CN',
   autoUpdate: true,
-  workPaths: {
-    bzdevBkdev: '~/bzdev/bkdev',
-    bzdevExdev: '~/bzdev/exdev'
-  },
+  workPaths: [] as string[],
   dailyReportTemplate: DEFAULT_DAILY_REPORT_TEMPLATE,
   dailyReporterSystemPrompt: DEFAULT_DAILY_REPORTER_SYSTEM_PROMPT,
   plugins: {},
@@ -76,14 +73,13 @@ export class ConfigManager {
   }
 
   // 获取工作路径配置
-  getWorkPaths(): { bzdevBkdev: string; bzdevExdev: string } {
+  getWorkPaths(): string[] {
     return this.get('workPaths', DEFAULT_CONFIG.workPaths);
   }
 
   // 更新工作路径配置
-  async setWorkPaths(paths: Partial<AppConfig['workPaths']>): Promise<void> {
-    const current = this.getWorkPaths();
-    await this.set('workPaths', { ...current, ...paths });
+  async setWorkPaths(paths: string[]): Promise<void> {
+    await this.set('workPaths', paths);
   }
 
   // 获取主题设置

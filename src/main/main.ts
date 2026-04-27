@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
 import { IPCChannels } from '../shared/ipc-channels';
 import { PluginManager } from './plugins/PluginManager';
@@ -136,6 +136,12 @@ function setupIPCHandlers(): void {
 
   ipcMain.handle(IPCChannels.CONFIG_GET_ALL, async () => {
     return configManager.getAll();
+  });
+
+  // 对话框相关
+  ipcMain.handle(IPCChannels.DIALOG_SHOW_OPEN_DIALOG, async (_, options: Electron.OpenDialogOptions) => {
+    if (!mainWindow) return { canceled: true, filePaths: [] };
+    return dialog.showOpenDialog(mainWindow, options);
   });
 
   Logger.info('IPC handlers registered');

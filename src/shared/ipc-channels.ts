@@ -39,4 +39,7 @@ export enum IPCChannels {
   // 系统相关
   SYS_GET_OS_INFO = 'sys:get-os-info',
   SYS_GET_VERSION = 'sys:get-version',
+
+  // 对话框相关
+  DIALOG_SHOW_OPEN_DIALOG = 'dialog:show-open-dialog',
 }

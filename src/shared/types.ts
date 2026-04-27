@@ -75,10 +75,7 @@ export interface AppConfig {
   language: string;
   autoUpdate: boolean;
   defaultLLMProvider?: string;
-  workPaths: {
-    bzdevBkdev: string;
-    bzdevExdev: string;
-  };
+  workPaths: string[];
   /** 日报 Markdown 模板，占位符：{date} {total_commits} {total_repos} {work_hours} {commit_details} {stats} {generated_at} */
   dailyReportTemplate?: string;
   /** Daily Reporter Agent 的系统提示词 */

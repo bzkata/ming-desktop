@@ -44,6 +44,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     set: (key: string, value: any) => ipcRenderer.invoke(IPCChannels.CONFIG_SET, key, value),
     getAll: () => ipcRenderer.invoke(IPCChannels.CONFIG_GET_ALL),
   },
+
+  // 对话框 API
+  dialog: {
+    showOpenDialog: (options: Electron.OpenDialogOptions) =>
+      ipcRenderer.invoke(IPCChannels.DIALOG_SHOW_OPEN_DIALOG, options),
+  },
 });
 
 // 类型定义
@@ -72,5 +78,8 @@ export interface ElectronAPI {
     get: (key: string) => Promise<any>;
     set: (key: string, value: any) => Promise<void>;
     getAll: () => Promise<any>;
+  };
+  dialog: {
+    showOpenDialog: (options: Electron.OpenDialogOptions) => Promise<Electron.OpenDialogReturnValue>;
   };
 }
