@@ -1,9 +1,11 @@
 import { EventEmitter } from 'events';
+import { randomUUID } from 'crypto';
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import { LLMProvider, LLMProviderConfig, ChatMessage } from '../../shared/types';
 import { Logger } from '../utils/Logger';
 import { ConfigManager } from '../services/ConfigManager';
+import { getDatabase } from '../database/connection';
 
 export class LLMProviderManager extends EventEmitter {
   private providers: Map<string, LLMProvider> = new Map();
@@ -16,9 +18,20 @@ export class LLMProviderManager extends EventEmitter {
   async initialize(): Promise<void> {
     Logger.info('Initializing LLM Provider Manager...');
 
-    // 从配置中加载已配置的 providers
-    const savedProviders = await this.configManager.get('llmProviders', []);
-    for (const provider of savedProviders) {
+    // Load from SQLite
+    const db = getDatabase();
+    const rows = db.prepare('SELECT * FROM llm_providers').all() as any[];
+
+    for (const row of rows) {
+      const provider: LLMProvider = {
+        id: row.id,
+        name: row.name,
+        type: row.type,
+        apiKey: row.api_key,
+        baseURL: row.base_url,
+        models: JSON.parse(row.models || '[]'),
+        enabled: !!row.enabled
+      };
       this.providers.set(provider.id, provider);
       if (provider.enabled) {
         await this.initializeProviderClient(provider);
@@ -68,7 +81,7 @@ export class LLMProviderManager extends EventEmitter {
 
   async addProvider(config: LLMProviderConfig): Promise<LLMProvider> {
     const provider: LLMProvider = {
-      id: `provider-${Date.now()}`,
+      id: `provider-${randomUUID().slice(0, 8)}`,
       ...config,
       enabled: true,
       models: config.models?.length
@@ -82,9 +95,12 @@ export class LLMProviderManager extends EventEmitter {
       await this.initializeProviderClient(provider);
     }
 
-    // 保存到配置
-    const allProviders = Array.from(this.providers.values());
-    await this.configManager.set('llmProviders', allProviders);
+    // Save to SQLite
+    const db = getDatabase();
+    db.prepare(`
+      INSERT INTO llm_providers (id, name, type, api_key, base_url, models, enabled)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(provider.id, provider.name, provider.type, provider.apiKey || null, provider.baseURL || null, JSON.stringify(provider.models), 1);
 
     this.emit('provider-added', provider);
     Logger.info(`LLM provider added: ${provider.name}`);
@@ -102,9 +118,9 @@ export class LLMProviderManager extends EventEmitter {
         this.configManager.delete('defaultLLMProvider');
       }
 
-      // 保存到配置
-      const allProviders = Array.from(this.providers.values());
-      await this.configManager.set('llmProviders', allProviders);
+      // Remove from SQLite
+      const db = getDatabase();
+      db.prepare('DELETE FROM llm_providers WHERE id = ?').run(providerId);
 
       this.emit('provider-removed', providerId);
       Logger.info(`LLM provider removed: ${provider.name}`);
@@ -117,7 +133,7 @@ export class LLMProviderManager extends EventEmitter {
       const updated = { ...provider, ...updates };
       this.providers.set(providerId, updated);
 
-      // 重新初始化客户端如果配置改变
+      // Reinitialize client if relevant config changed
       if (
         updates.apiKey !== undefined ||
         updates.baseURL !== undefined ||
@@ -130,9 +146,13 @@ export class LLMProviderManager extends EventEmitter {
         }
       }
 
-      // 保存到配置
-      const allProviders = Array.from(this.providers.values());
-      await this.configManager.set('llmProviders', allProviders);
+      // Save to SQLite
+      const db = getDatabase();
+      db.prepare(`
+        UPDATE llm_providers
+        SET name = ?, type = ?, api_key = ?, base_url = ?, models = ?, enabled = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `).run(updated.name, updated.type, updated.apiKey || null, updated.baseURL || null, JSON.stringify(updated.models), updated.enabled ? 1 : 0, providerId);
 
       this.emit('provider-updated', updated);
       Logger.info(`LLM provider updated: ${updated.name}`);

@@ -8,6 +8,9 @@ import { LLMProviderManager } from './llm/LLMProviderManager';
 import { ExecutorService } from './services/ExecutorService';
 import { ConfigManager } from './services/ConfigManager';
 import { Logger } from './utils/Logger';
+import { initializeDatabase, closeDatabase } from './database/connection';
+import { runMigrations } from './database/schema';
+import { migrateFromStore } from './database/migrate-from-store';
 
 let mainWindow: BrowserWindow | null = null;
 let pluginManager: PluginManager;
@@ -29,7 +32,7 @@ function createWindow(): void {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, '../preload/index.js'),
     },
     titleBarStyle: 'hiddenInset',
     backgroundColor: '#0f172a',
@@ -53,6 +56,11 @@ async function initializeServices(): Promise<void> {
   // 初始化配置管理器
   configManager = new ConfigManager();
   await configManager.initialize();
+
+  // 初始化数据库
+  initializeDatabase();
+  runMigrations();
+  migrateFromStore(configManager);
 
   // 初始化 LLM Provider 管理器
   llmManager = new LLMProviderManager(configManager);
@@ -204,6 +212,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
+  closeDatabase();
   if (process.platform !== 'darwin') {
     app.quit();
   }

@@ -1,0 +1,141 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 199 89% 48%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 199 89% 48%;
+    --radius: 0.75rem;
+
+    /* Custom extended tokens */
+    --bg-secondary: #f8fafc;
+    --bg-tertiary: #f1f5f9;
+    --bg-input: #f1f5f9;
+    --bg-hover: #e2e8f0;
+    --text-secondary: #475569;
+    --code-bg: #f1f5f9;
+    --shadow-card: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    --badge-success-bg: rgba(34,197,94,0.1);
+    --badge-success-text: #16a34a;
+    --badge-warning-bg: rgba(234,179,8,0.1);
+    --badge-warning-text: #ca8a04;
+    --badge-error-bg: rgba(239,68,68,0.1);
+    --badge-error-text: #dc2626;
+    --badge-info-bg: rgba(59,130,246,0.1);
+    --badge-info-text: #2563eb;
+    --scrollbar-track: #f1f5f9;
+    --scrollbar-thumb: #cbd5e1;
+    --scrollbar-thumb-hover: #94a3b8;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 47.4% 11.2%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 47.4% 11.2%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 199 89% 48%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 199 89% 48%;
+
+    --bg-secondary: #0f172a;
+    --bg-tertiary: #1e293b;
+    --bg-input: #1e293b;
+    --bg-hover: #334155;
+    --text-secondary: #94a3b8;
+    --code-bg: #1e293b;
+    --shadow-card: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+    --badge-success-bg: rgba(34,197,94,0.15);
+    --badge-success-text: #4ade80;
+    --badge-warning-bg: rgba(234,179,8,0.15);
+    --badge-warning-text: #facc15;
+    --badge-error-bg: rgba(239,68,68,0.15);
+    --badge-error-text: #f87171;
+    --badge-info-bg: rgba(59,130,246,0.15);
+    --badge-info-text: #60a5fa;
+    --scrollbar-track: #0f172a;
+    --scrollbar-thumb: #334155;
+    --scrollbar-thumb-hover: #475569;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+
+  .drag-region {
+    -webkit-app-region: drag;
+  }
+  .no-drag {
+    -webkit-app-region: no-drag;
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* Markdown */
+.markdown {
+  @apply max-w-none;
+}
+.markdown h1 { @apply text-2xl font-bold mb-4; }
+.markdown h2 { @apply text-xl font-semibold mb-3; }
+.markdown h3 { @apply text-lg font-medium mb-2; }
+.markdown p  { @apply mb-4; }
+.markdown ul { @apply list-disc list-inside mb-4; }
+.markdown code {
+  background: var(--code-bg);
+  @apply px-2 py-1 rounded text-sm;
+}
+.markdown pre {
+  background: var(--code-bg);
+  @apply p-4 rounded-lg overflow-x-auto mb-4;
+}
+.markdown pre code {
+  @apply bg-transparent p-0;
+}

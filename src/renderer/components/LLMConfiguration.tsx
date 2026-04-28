@@ -1,6 +1,25 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Key, Plus, Pencil, Trash2, X } from 'lucide-react';
+import { Key, Plus, Pencil, Trash2 } from 'lucide-react';
 import type { LLMProvider, LLMProviderConfig } from '../../shared/types';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent } from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 
 const PROVIDER_TYPES: { value: LLMProvider['type']; label: string }[] = [
   { value: 'openai', label: 'OpenAI' },
@@ -180,266 +199,250 @@ export default function LLMConfiguration() {
   return (
     <div>
       {error && (
-        <p className="text-sm text-red-400 mb-3" role="alert">
+        <p className="text-sm text-destructive mb-3" role="alert">
           {error}
         </p>
       )}
 
       <div className="mb-4 flex flex-col sm:flex-row sm:items-center gap-3">
-        <label className="text-sm font-medium text-gray-300 shrink-0">Default for Agent chat</label>
-        <select
-          className="input max-w-md"
+        <Label className="shrink-0">Default for Agent chat</Label>
+        <Select
           value={defaultProviderId}
-          onChange={e => handleDefaultChange(e.target.value)}
+          onValueChange={handleDefaultChange}
           disabled={loading || !providers.some(p => p.enabled)}
         >
-          {!providers.some(p => p.enabled) && <option value="">—</option>}
-          {providers
-            .filter(p => p.enabled)
-            .map(p => (
-              <option key={p.id} value={p.id}>
-                {p.name} ({p.type})
-              </option>
-            ))}
-        </select>
+          <SelectTrigger className="max-w-md">
+            <SelectValue placeholder="—" />
+          </SelectTrigger>
+          <SelectContent>
+            {!providers.some(p => p.enabled) && (
+              <SelectItem value="__none__">—</SelectItem>
+            )}
+            {providers
+              .filter(p => p.enabled)
+              .map(p => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name} ({p.type})
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="flex justify-end mb-4">
-        <button
+        <Button
           type="button"
           onClick={() => {
             setShowAdd(true);
             setAddForm(emptyAddForm);
             setError(null);
           }}
-          className="btn-primary flex items-center gap-2"
+          className="flex items-center gap-2"
         >
           <Plus size={18} />
           Add provider
-        </button>
+        </Button>
       </div>
 
       {loading ? (
-        <div className="text-center py-10 text-gray-400">Loading…</div>
+        <div className="text-center py-10 text-muted-foreground">Loading…</div>
       ) : providers.length === 0 ? (
-        <div className="text-center py-8 text-gray-400 border border-dashed border-dark-700 rounded-lg">
+        <div className="text-center py-8 text-muted-foreground border border-dashed border-border rounded-lg">
           <Key size={40} className="mx-auto mb-3 opacity-50" />
           <p>No LLM providers yet. Add an API key to get started.</p>
         </div>
       ) : (
         <ul className="space-y-3">
           {providers.map(p => (
-            <li
-              key={p.id}
-              className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-lg bg-dark-800/80 border border-dark-700"
-            >
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-gray-100">{p.name}</div>
-                <div className="text-xs text-gray-500 mt-0.5">
-                  {p.type} · {maskApiKey(p.apiKey)}
-                  {p.baseURL && (
-                    <span className="block truncate mt-1" title={p.baseURL}>
-                      {p.baseURL}
-                    </span>
-                  )}
-                </div>
-                {p.models?.length > 0 && (
-                  <div className="text-xs text-gray-500 mt-1">Models: {p.models.join(', ')}</div>
-                )}
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <span className="text-xs text-gray-500 mr-1">Enabled</span>
-                <button
-                  type="button"
-                  onClick={() => handleToggle(p)}
-                  className={`relative w-11 h-6 rounded-full transition-colors ${
-                    p.enabled ? 'bg-primary-600' : 'bg-dark-600'
-                  }`}
-                  aria-pressed={p.enabled}
-                >
-                  <span
-                    className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${
-                      p.enabled ? 'left-6' : 'left-1'
-                    }`}
-                  />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openEdit(p)}
-                  className="p-2 rounded-lg hover:bg-dark-700 text-gray-400"
-                  title="Edit"
-                >
-                  <Pencil size={16} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleRemove(p.id, p.name)}
-                  className="p-2 rounded-lg hover:bg-red-500/10 text-red-400/90"
-                  title="Remove"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
+            <li key={p.id}>
+              <Card>
+                <CardContent className="pt-4 pb-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-foreground">{p.name}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        {p.type} · {maskApiKey(p.apiKey)}
+                        {p.baseURL && (
+                          <span className="block truncate mt-1" title={p.baseURL}>
+                            {p.baseURL}
+                          </span>
+                        )}
+                      </div>
+                      {p.models?.length > 0 && (
+                        <div className="text-xs text-muted-foreground mt-1">Models: {p.models.join(', ')}</div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Label htmlFor={`switch-${p.id}`} className="text-xs text-muted-foreground mr-1">Enabled</Label>
+                      <Switch
+                        id={`switch-${p.id}`}
+                        checked={p.enabled}
+                        onCheckedChange={() => handleToggle(p)}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => openEdit(p)}
+                        title="Edit"
+                      >
+                        <Pencil size={16} />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleRemove(p.id, p.name)}
+                        title="Remove"
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 size={16} />
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </li>
           ))}
         </ul>
       )}
 
-      {showAdd && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
-          <div className="card w-full max-w-md max-h-[90vh] overflow-y-auto border border-dark-700 shadow-xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Add provider</h3>
-              <button
-                type="button"
-                onClick={() => setShowAdd(false)}
-                className="p-1 rounded hover:bg-dark-800 text-gray-400"
-              >
-                <X size={20} />
-              </button>
+      {/* Add Provider Dialog */}
+      <Dialog open={showAdd} onOpenChange={setShowAdd}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Add provider</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleAdd} className="space-y-3">
+            <div>
+              <Label className="block mb-1.5">Name</Label>
+              <Input
+                value={addForm.name}
+                onChange={e => setAddForm({ ...addForm, name: e.target.value })}
+                placeholder="e.g. OpenAI Production"
+              />
             </div>
-            <form onSubmit={handleAdd} className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium mb-1.5">Name</label>
-                <input
-                  className="input"
-                  value={addForm.name}
-                  onChange={e => setAddForm({ ...addForm, name: e.target.value })}
-                  placeholder="e.g. OpenAI Production"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5">Type</label>
-                <select
-                  className="input"
-                  value={addForm.type}
-                  onChange={e =>
-                    setAddForm({ ...addForm, type: e.target.value as LLMProvider['type'] })
-                  }
-                >
+            <div>
+              <Label className="block mb-1.5">Type</Label>
+              <Select
+                value={addForm.type}
+                onValueChange={val =>
+                  setAddForm({ ...addForm, type: val as LLMProvider['type'] })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
                   {PROVIDER_TYPES.map(t => (
-                    <option key={t.value} value={t.value}>
+                    <SelectItem key={t.value} value={t.value}>
                       {t.label}
-                    </option>
+                    </SelectItem>
                   ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5">API key</label>
-                <input
-                  className="input"
-                  type="password"
-                  autoComplete="off"
-                  value={addForm.apiKey ?? ''}
-                  onChange={e => setAddForm({ ...addForm, apiKey: e.target.value })}
-                  placeholder="sk-…"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5">Base URL (optional)</label>
-                <input
-                  className="input"
-                  value={addForm.baseURL ?? ''}
-                  onChange={e => setAddForm({ ...addForm, baseURL: e.target.value })}
-                  placeholder={
-                    addForm.type === 'anthropic'
-                      ? 'https://api.anthropic.com'
-                      : 'https://api.openai.com/v1'
-                  }
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5">Models (optional)</label>
-                <input
-                  className="input"
-                  value={addForm.models?.join(', ') ?? ''}
-                  onChange={e =>
-                    setAddForm({
-                      ...addForm,
-                      models: e.target.value
-                        .split(',')
-                        .map(s => s.trim())
-                        .filter(Boolean),
-                    })
-                  }
-                  placeholder="First model is used for chat, e.g. gpt-4, gpt-3.5-turbo"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAdd(false)}
-                  className="btn-secondary"
-                >
-                  Cancel
-                </button>
-                <button type="submit" disabled={saving} className="btn-primary">
-                  {saving ? 'Adding…' : 'Add'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {editingId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
-          <div className="card w-full max-w-md max-h-[90vh] overflow-y-auto border border-dark-700 shadow-xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Edit provider</h3>
-              <button
-                type="button"
-                onClick={() => setEditingId(null)}
-                className="p-1 rounded hover:bg-dark-800 text-gray-400"
-              >
-                <X size={20} />
-              </button>
+                </SelectContent>
+              </Select>
             </div>
-            <form onSubmit={handleEditSave} className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium mb-1.5">Base URL</label>
-                <input
-                  className="input"
-                  value={editForm.baseURL}
-                  onChange={e => setEditForm({ ...editForm, baseURL: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5">Models (comma-separated)</label>
-                <input
-                  className="input"
-                  value={editForm.modelsStr}
-                  onChange={e => setEditForm({ ...editForm, modelsStr: e.target.value })}
-                />
-                <p className="text-xs text-gray-500 mt-1">The first model is used for API calls.</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5">New API key (optional)</label>
-                <input
-                  className="input"
-                  type="password"
-                  autoComplete="off"
-                  value={editForm.apiKey}
-                  onChange={e => setEditForm({ ...editForm, apiKey: e.target.value })}
-                  placeholder="Leave blank to keep current key"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setEditingId(null)}
-                  className="btn-secondary"
-                >
-                  Cancel
-                </button>
-                <button type="submit" disabled={saving} className="btn-primary">
-                  {saving ? 'Saving…' : 'Save'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+            <div>
+              <Label className="block mb-1.5">API key</Label>
+              <Input
+                type="password"
+                autoComplete="off"
+                value={addForm.apiKey ?? ''}
+                onChange={e => setAddForm({ ...addForm, apiKey: e.target.value })}
+                placeholder="sk-…"
+              />
+            </div>
+            <div>
+              <Label className="block mb-1.5">Base URL (optional)</Label>
+              <Input
+                value={addForm.baseURL ?? ''}
+                onChange={e => setAddForm({ ...addForm, baseURL: e.target.value })}
+                placeholder={
+                  addForm.type === 'anthropic'
+                    ? 'https://api.anthropic.com'
+                    : 'https://api.openai.com/v1'
+                }
+              />
+            </div>
+            <div>
+              <Label className="block mb-1.5">Models (optional)</Label>
+              <Input
+                value={addForm.models?.join(', ') ?? ''}
+                onChange={e =>
+                  setAddForm({
+                    ...addForm,
+                    models: e.target.value
+                      .split(',')
+                      .map(s => s.trim())
+                      .filter(Boolean),
+                  })
+                }
+                placeholder="First model is used for chat, e.g. gpt-4, gpt-3.5-turbo"
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setShowAdd(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={saving}>
+                {saving ? 'Adding…' : 'Add'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Provider Dialog */}
+      <Dialog open={editingId !== null} onOpenChange={(open) => { if (!open) setEditingId(null); }}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit provider</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleEditSave} className="space-y-3">
+            <div>
+              <Label className="block mb-1.5">Base URL</Label>
+              <Input
+                value={editForm.baseURL}
+                onChange={e => setEditForm({ ...editForm, baseURL: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label className="block mb-1.5">Models (comma-separated)</Label>
+              <Input
+                value={editForm.modelsStr}
+                onChange={e => setEditForm({ ...editForm, modelsStr: e.target.value })}
+              />
+              <p className="text-xs text-muted-foreground mt-1">The first model is used for API calls.</p>
+            </div>
+            <div>
+              <Label className="block mb-1.5">New API key (optional)</Label>
+              <Input
+                type="password"
+                autoComplete="off"
+                value={editForm.apiKey}
+                onChange={e => setEditForm({ ...editForm, apiKey: e.target.value })}
+                placeholder="Leave blank to keep current key"
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setEditingId(null)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={saving}>
+                {saving ? 'Saving…' : 'Save'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

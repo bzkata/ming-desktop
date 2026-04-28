@@ -4,7 +4,29 @@
       "Bash(git remote:*)",
       "Bash(git init:*)",
       "Bash(git -C /Users/bloks/bzdev/playground/ming-desktop remote add origin git@github.com:bzkata/ming-desktop.git)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(npm run:*)",
+      "Bash(npx vite:*)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); d['workPaths']=[]; json.dump\\(d,sys.stdout,indent=2\\)\")",
+      "Bash(mv /tmp/ming-config-tmp.json \"/Users/bloks/Library/Application Support/ming-desktop/ming-desktop-config.json\")",
+      "Bash(python3:*)",
+      "Bash(ls -d /Users/bloks/bzdev/*/.git)",
+      "Bash(ls -d /Users/bloks/bzdev/bkdev/*/.git)",
+      "Bash(ls -d /Users/bloks/bzdev/exdev/*/.git)",
+      "Bash(ls:*)",
+      "Bash(REPO_PATHS=\"/Users/bloks/bzdev/bkdev,/Users/bloks/bzdev/exdev\" TIME_RANGE=\"week\" INCLUDE_ALL_BRANCHES=\"true\" python3 scripts/generate_daily_report.py)",
+      "WebSearch",
+      "Bash(npm install:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(npx electron-vite:*)",
+      "Bash(timeout 8 npx electron .)",
+      "Bash(npx electron-rebuild:*)",
+      "Bash(sqlite3 \"/Users/bloks/Library/Application Support/ming-desktop/ming-desktop.db\" \".tables\")",
+      "Bash(sqlite3 \"/Users/bloks/Library/Application Support/ming-desktop/ming-desktop.db\" \"SELECT id, name FROM agents;\")",
+      "Bash(sqlite3 \"/Users/bloks/Library/Application Support/ming-desktop/ming-desktop.db\" \"SELECT id, name FROM _migrations;\")",
+      "Bash(sqlite3:*)",
+      "Bash(npx shadcn@latest:*)",
+      "Skill(update-config)"
     ]
   }
 }

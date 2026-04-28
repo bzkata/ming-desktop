@@ -1,14 +1,15 @@
 import { EventEmitter } from 'events';
+import { randomUUID } from 'crypto';
 import { Agent, AgentConfig, ChatMessage } from '../../shared/types';
 import { DEFAULT_DAILY_REPORTER_SYSTEM_PROMPT } from '../../shared/dailyReportDefaults';
 import { Logger } from '../utils/Logger';
 import { LLMProviderManager } from '../llm/LLMProviderManager';
 import { PluginManager } from '../plugins/PluginManager';
 import { ConfigManager } from '../services/ConfigManager';
+import { getDatabase } from '../database/connection';
 
 export class AgentManager extends EventEmitter {
   private agents: Map<string, Agent> = new Map();
-  private chatHistories: Map<string, ChatMessage[]> = new Map();
 
   constructor(
     private configManager: ConfigManager,
@@ -21,11 +22,30 @@ export class AgentManager extends EventEmitter {
   async initialize(): Promise<void> {
     Logger.info('Initializing Agent Manager...');
 
-    // 从配置中加载已创建的 agents
-    // 这里可以从配置文件或数据库加载
+    // Load agents from SQLite
+    const db = getDatabase();
+    const rows = db.prepare('SELECT * FROM agents').all() as any[];
 
-    // 创建默认 Agent
-    await this.createDefaultAgents();
+    for (const row of rows) {
+      const agent: Agent = {
+        id: row.id,
+        name: row.name,
+        description: row.description || '',
+        model: row.model,
+        systemPrompt: row.system_prompt,
+        tools: JSON.parse(row.tools || '[]'),
+        enabled: !!row.enabled,
+        isDefault: !!row.is_default,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      };
+      this.agents.set(agent.id, agent);
+    }
+
+    // Seed default agents if none exist
+    if (this.agents.size === 0) {
+      await this.createDefaultAgents();
+    }
 
     Logger.info(`Initialized ${this.agents.size} agents`);
   }
@@ -78,7 +98,7 @@ You have access to:
 
   async createAgent(config: AgentConfig): Promise<string> {
     const agent: Agent = {
-      id: `agent-${Date.now()}`,
+      id: `agent-${randomUUID().slice(0, 8)}`,
       ...config,
       description: config.description ?? '',
       tools: config.tools ?? [],
@@ -87,7 +107,13 @@ You have access to:
     };
 
     this.agents.set(agent.id, agent);
-    this.chatHistories.set(agent.id, []);
+
+    // Save to SQLite
+    const db = getDatabase();
+    db.prepare(`
+      INSERT INTO agents (id, name, description, model, system_prompt, tools, enabled, is_default)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(agent.id, agent.name, agent.description, agent.model, agent.systemPrompt, JSON.stringify(agent.tools), agent.enabled !== false ? 1 : 0, (agent as any).isDefault ? 1 : 0);
 
     this.emit('agent-created', agent);
     Logger.info(`Agent created: ${agent.name}`);
@@ -101,16 +127,23 @@ You have access to:
       throw new Error(`Agent not found: ${agentId}`);
     }
 
-    // 获取聊天历史
-    let history = this.chatHistories.get(agentId) || [];
+    const db = getDatabase();
 
-    // 添加用户消息
-    const userMsg: ChatMessage = {
-      role: 'user',
-      content: userMessage,
-      timestamp: new Date().toISOString()
-    };
-    history.push(userMsg);
+    // Save user message to DB
+    db.prepare(`
+      INSERT INTO chat_messages (agent_id, role, content) VALUES (?, 'user', ?)
+    `).run(agentId, userMessage);
+
+    // Load recent history from DB (last 10 messages)
+    const rows = db.prepare(`
+      SELECT role, content, timestamp FROM chat_messages
+      WHERE agent_id = ? ORDER BY timestamp DESC LIMIT 10
+    `).all(agentId) as any[];
+    const history: ChatMessage[] = rows.reverse().map(r => ({
+      role: r.role,
+      content: r.content,
+      timestamp: r.timestamp
+    }));
 
     const systemContent =
       agent.name === 'Daily Reporter'
@@ -118,10 +151,9 @@ You have access to:
           agent.systemPrompt
         : agent.systemPrompt;
 
-    // 准备发送给 LLM 的消息
     const messages: ChatMessage[] = [
       { role: 'system', content: systemContent },
-      ...history.slice(-10) // 保留最近10条消息
+      ...history
     ];
 
     try {
@@ -132,18 +164,12 @@ You have access to:
 
       const response = await this.llmManager.chat(providerId, messages);
 
-      // 添加助手回复
-      const assistantMsg: ChatMessage = {
-        role: 'assistant',
-        content: response,
-        timestamp: new Date().toISOString()
-      };
-      history.push(assistantMsg);
+      // Save assistant response to DB
+      db.prepare(`
+        INSERT INTO chat_messages (agent_id, role, content) VALUES (?, 'assistant', ?)
+      `).run(agentId, response);
 
-      // 更新聊天历史
-      this.chatHistories.set(agentId, history);
-
-      this.emit('agent-message', { agentId, message: assistantMsg });
+      this.emit('agent-message', { agentId, message: { role: 'assistant', content: response, timestamp: new Date().toISOString() } });
       Logger.info(`Agent ${agent.name} responded`);
 
       return response;
@@ -166,7 +192,11 @@ You have access to:
     const agent = this.agents.get(agentId);
     if (agent) {
       this.agents.delete(agentId);
-      this.chatHistories.delete(agentId);
+
+      // Delete from SQLite (cascades to chat_messages)
+      const db = getDatabase();
+      db.prepare('DELETE FROM agents WHERE id = ?').run(agentId);
+
       this.emit('agent-deleted', agentId);
       Logger.info(`Agent deleted: ${agent.name}`);
     }
@@ -177,17 +207,36 @@ You have access to:
     if (agent) {
       const updated = { ...agent, ...updates, updatedAt: new Date().toISOString() };
       this.agents.set(agentId, updated);
+
+      // Update in SQLite
+      const db = getDatabase();
+      db.prepare(`
+        UPDATE agents
+        SET name = ?, description = ?, model = ?, system_prompt = ?, tools = ?, enabled = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `).run(updated.name, updated.description, updated.model, updated.systemPrompt, JSON.stringify(updated.tools), updated.enabled !== false ? 1 : 0, agentId);
+
       this.emit('agent-updated', updated);
       Logger.info(`Agent updated: ${updated.name}`);
     }
   }
 
   getChatHistory(agentId: string): ChatMessage[] {
-    return this.chatHistories.get(agentId) || [];
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT role, content, timestamp FROM chat_messages
+      WHERE agent_id = ? ORDER BY timestamp ASC
+    `).all(agentId) as any[];
+    return rows.map(r => ({
+      role: r.role,
+      content: r.content,
+      timestamp: r.timestamp
+    }));
   }
 
   clearChatHistory(agentId: string): void {
-    this.chatHistories.set(agentId, []);
+    const db = getDatabase();
+    db.prepare('DELETE FROM chat_messages WHERE agent_id = ?').run(agentId);
     this.emit('chat-cleared', agentId);
     Logger.info(`Chat history cleared for agent: ${agentId}`);
   }

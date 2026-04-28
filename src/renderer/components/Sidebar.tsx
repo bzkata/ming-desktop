@@ -1,5 +1,8 @@
 import { LayoutDashboard, Puzzle, MessageSquare, Settings, Sun, Moon, Monitor } from 'lucide-react';
 import { useTheme } from '../App';
+import { Button } from './ui/button';
+import { Separator } from './ui/separator';
+import { cn } from '@/lib/utils';
 
 interface SidebarProps {
   activeTab: string;
@@ -24,81 +27,60 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
   };
 
   return (
-    <div
-      className="w-64 flex flex-col drag-region"
-      style={{ background: 'var(--bg-secondary)', borderRight: '1px solid var(--border-default)' }}
-    >
-      {/* Logo - draggable */}
-      <div className="p-6 no-drag" style={{ borderBottom: '1px solid var(--border-default)' }}>
+    <div className="w-64 flex flex-col bg-secondary border-r">
+      {/* macOS drag bar */}
+      <div className="drag-region flex-shrink-0 h-8" />
+      {/* Logo */}
+      <div className="p-6 pt-2">
         <div className="flex items-center gap-3">
-          <div
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-lg"
-            style={{ background: 'linear-gradient(135deg, var(--accent), var(--accent-hover))' }}
-          >
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-lg bg-primary">
             銘
           </div>
           <div>
-            <h1 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>銘</h1>
-            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Desktop Client</p>
+            <h1 className="text-lg font-bold text-foreground">銘</h1>
+            <p className="text-xs text-muted-foreground">Desktop Client</p>
           </div>
         </div>
+        <Separator className="mt-6" />
       </div>
 
-      {/* Navigation - no drag */}
-      <nav className="flex-1 p-4 space-y-2 no-drag">
+      {/* Navigation */}
+      <nav className="flex-1 p-4 space-y-2">
         {menuItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
 
           return (
-            <button
+            <Button
               key={item.id}
+              variant={isActive ? 'secondary' : 'ghost'}
+              className={cn(
+                'w-full justify-start gap-3 px-4 py-3 h-auto',
+                isActive && 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
+              )}
               onClick={() => onTabChange(item.id)}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200"
-              style={{
-                background: isActive ? 'var(--accent)' : 'transparent',
-                color: isActive ? 'var(--accent-text)' : 'var(--text-secondary)',
-              }}
-              onMouseEnter={(e) => {
-                if (!isActive) {
-                  e.currentTarget.style.background = 'var(--bg-tertiary)';
-                  e.currentTarget.style.color = 'var(--text-primary)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!isActive) {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = 'var(--text-secondary)';
-                }
-              }}
             >
               <Icon size={20} />
               <span className="font-medium">{item.label}</span>
-            </button>
+            </Button>
           );
         })}
       </nav>
 
       {/* Footer with theme toggle */}
-      <div className="p-4 no-drag" style={{ borderTop: '1px solid var(--border-default)' }}>
+      <div className="p-4">
+        <Separator className="mb-4" />
         <div className="flex items-center justify-between">
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>銘 v0.1.0</span>
-          <button
+          <span className="text-xs text-muted-foreground">銘 v0.1.0</span>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
             onClick={cycleTheme}
-            className="p-1.5 rounded-md transition-colors"
-            style={{ color: 'var(--text-muted)' }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'var(--bg-tertiary)';
-              e.currentTarget.style.color = 'var(--text-primary)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.color = 'var(--text-muted)';
-            }}
             title={`Theme: ${theme}`}
           >
             {theme === 'light' ? <Sun size={16} /> : theme === 'dark' ? <Moon size={16} /> : <Monitor size={16} />}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

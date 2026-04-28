@@ -4,6 +4,7 @@ import Dashboard from './components/Dashboard';
 import PluginManager from './components/PluginManager';
 import AgentChat from './components/AgentChat';
 import Settings from './components/Settings';
+import { themePresets, defaultThemeName, applyThemePreset, type ThemePreset } from './lib/themes';
 
 interface ElectronAPI {
   plugins: {
@@ -52,12 +53,18 @@ interface ThemeContextType {
   theme: Theme;
   resolvedTheme: 'light' | 'dark';
   setTheme: (theme: Theme) => void;
+  colorTheme: string;
+  setColorTheme: (name: string) => void;
+  colorPresets: ThemePreset[];
 }
 
 const ThemeContext = createContext<ThemeContextType>({
   theme: 'dark',
   resolvedTheme: 'dark',
   setTheme: () => {},
+  colorTheme: defaultThemeName,
+  setColorTheme: () => {},
+  colorPresets: themePresets,
 });
 
 export function useTheme() {
@@ -72,41 +79,52 @@ function getSystemTheme(): 'light' | 'dark' {
 function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>('dark');
   const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('dark');
+  const [colorTheme, setColorThemeState] = useState(defaultThemeName);
 
-  const applyTheme = useCallback((t: Theme) => {
-    const resolved = t === 'auto' ? getSystemTheme() : t;
-    setResolvedTheme(resolved);
-    document.documentElement.classList.toggle('dark', resolved === 'dark');
+  const applyAll = useCallback((t: Theme, colorName: string, resolved?: 'light' | 'dark') => {
+    const r = resolved || (t === 'auto' ? getSystemTheme() : t);
+    setResolvedTheme(r);
+    document.documentElement.classList.toggle('dark', r === 'dark');
+    const preset = themePresets.find(p => p.name === colorName) || themePresets[0];
+    applyThemePreset(preset, r);
   }, []);
 
   const setTheme = useCallback((t: Theme) => {
     setThemeState(t);
-    applyTheme(t);
+    applyAll(t, colorTheme);
     window.electronAPI?.config.set('theme', t);
-  }, [applyTheme]);
+  }, [applyAll, colorTheme]);
+
+  const setColorTheme = useCallback((name: string) => {
+    setColorThemeState(name);
+    applyAll(theme, name);
+    window.electronAPI?.config.set('colorTheme', name);
+  }, [applyAll, theme]);
 
   // Load saved theme on mount
   useEffect(() => {
     const loadTheme = async () => {
       const saved = await window.electronAPI?.config.get('theme');
+      const savedColor = await window.electronAPI?.config.get('colorTheme');
       const t = saved || 'dark';
+      const c = savedColor || defaultThemeName;
       setThemeState(t);
-      applyTheme(t);
+      setColorThemeState(c);
+      applyAll(t, c);
     };
     loadTheme();
 
-    // Listen for system theme changes when auto
     const handler = () => {
-      if (theme === 'auto') applyTheme('auto');
+      if (theme === 'auto') applyAll('auto', colorTheme);
     };
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', handler);
     return () => {
       window.matchMedia('(prefers-color-scheme: dark)').removeEventListener('change', handler);
     };
-  }, [applyTheme, theme]);
+  }, [applyAll, theme, colorTheme]);
 
   return (
-    <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme }}>
+    <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme, colorTheme, setColorTheme, colorPresets: themePresets }}>
       {children}
     </ThemeContext.Provider>
   );
@@ -140,10 +158,10 @@ function App() {
   if (isLoading) {
     return (
       <ThemeProvider>
-        <div className="flex items-center justify-center h-screen" style={{ background: 'var(--bg-primary)' }}>
+        <div className="flex items-center justify-center h-screen bg-background">
           <div className="text-center">
             <div className="text-4xl mb-4">銘</div>
-            <div style={{ color: 'var(--text-muted)' }}>Loading...</div>
+            <div className="text-muted-foreground">Loading...</div>
           </div>
         </div>
       </ThemeProvider>
@@ -153,10 +171,10 @@ function App() {
   if (loadError) {
     return (
       <ThemeProvider>
-        <div className="flex items-center justify-center h-screen" style={{ background: 'var(--bg-primary)' }}>
+        <div className="flex items-center justify-center h-screen bg-background">
           <div className="text-center">
-            <div style={{ color: 'var(--badge-error-text)' }} className="mb-2">启动失败</div>
-            <div style={{ color: 'var(--text-muted)' }} className="text-sm">{loadError}</div>
+            <div className="mb-2 text-destructive">启动失败</div>
+            <div className="text-sm text-muted-foreground">{loadError}</div>
           </div>
         </div>
       </ThemeProvider>
@@ -165,14 +183,14 @@ function App() {
 
   return (
     <ThemeProvider>
-      <div className="flex h-screen" style={{ background: 'var(--bg-primary)' }}>
+      <div className="flex h-screen bg-background">
         {/* Sidebar */}
         <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
 
         {/* Main content with drag bar */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* macOS drag bar */}
-          <div className="drag-region flex-shrink-0" style={{ height: '32px', background: 'var(--bg-secondary)' }} />
+          <div className="drag-region flex-shrink-0 h-8 bg-secondary" />
 
           {/* Content */}
           <div className="flex-1 overflow-hidden">
