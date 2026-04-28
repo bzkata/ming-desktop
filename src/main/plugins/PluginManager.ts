@@ -178,13 +178,13 @@ export class PluginManager extends EventEmitter {
   }
 
   private async executeDailyReport(params: any): Promise<PluginExecutionResult> {
-    const workPaths = this.configManager.get('workPaths', {}) as Record<string, string>;
+    const storedPaths = this.configManager.get('workPaths', []) as string[];
     const home = process.env.HOME || '';
 
     const repoPaths: string[] =
       params.repoPaths && params.repoPaths.length > 0
         ? params.repoPaths
-        : [workPaths.bzdevBkdev, workPaths.bzdevExdev].filter(Boolean);
+        : storedPaths.filter(Boolean);
 
     const reportTemplate =
       (this.configManager.get('dailyReportTemplate') as string | undefined)?.trim() ||

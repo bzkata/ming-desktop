@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
+import * as fs from 'fs';
 import { IPCChannels } from '../shared/ipc-channels';
 import { PluginManager } from './plugins/PluginManager';
 import { AgentManager } from './agent/AgentManager';
@@ -142,6 +143,49 @@ function setupIPCHandlers(): void {
   ipcMain.handle(IPCChannels.DIALOG_SHOW_OPEN_DIALOG, async (_, options: Electron.OpenDialogOptions) => {
     if (!mainWindow) return { canceled: true, filePaths: [] };
     return dialog.showOpenDialog(mainWindow, options);
+  });
+
+  // Git 仓库扫描
+  ipcMain.handle(IPCChannels.GIT_SCAN_REPOS, async () => {
+    const workPaths = configManager.get('workPaths', []) as string[];
+    if (!workPaths.length) return [];
+
+    const repos: { name: string; path: string }[] = [];
+
+    function scanDir(dir: string, depth: number) {
+      if (depth <= 0) return;
+      try {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+          const fullPath = path.join(dir, entry.name);
+          if (!entry.isDirectory()) continue;
+          if (fs.existsSync(path.join(fullPath, '.git'))) {
+            repos.push({ name: entry.name, path: fullPath });
+          } else if (depth > 1) {
+            scanDir(fullPath, depth - 1);
+          }
+        }
+      } catch { /* skip unreadable dirs */ }
+    }
+
+    // Also check if a workPath itself is a git repo
+    for (const wp of workPaths) {
+      try {
+        if (fs.existsSync(path.join(wp, '.git'))) {
+          repos.push({ name: path.basename(wp), path: wp });
+        }
+        scanDir(wp, 3);
+      } catch { /* skip */ }
+    }
+
+    // Deduplicate by path
+    const seen = new Set<string>();
+    return repos.filter(r => {
+      if (seen.has(r.path)) return false;
+      seen.add(r.path);
+      return true;
+    });
   });
 
   Logger.info('IPC handlers registered');

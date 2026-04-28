@@ -50,6 +50,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     showOpenDialog: (options: Electron.OpenDialogOptions) =>
       ipcRenderer.invoke(IPCChannels.DIALOG_SHOW_OPEN_DIALOG, options),
   },
+
+  // Git API
+  git: {
+    scanRepos: () => ipcRenderer.invoke(IPCChannels.GIT_SCAN_REPOS),
+  },
 });
 
 // 类型定义

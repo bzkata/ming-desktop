@@ -1,5 +1,4 @@
-import { useState, useEffect } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import PluginManager from './components/PluginManager';
@@ -32,12 +31,85 @@ interface ElectronAPI {
     set: (key: string, value: any) => Promise<void>;
     getAll: () => Promise<any>;
   };
+  dialog: {
+    showOpenDialog: (options: Electron.OpenDialogOptions) => Promise<Electron.OpenDialogReturnValue>;
+  };
+  git: {
+    scanRepos: () => Promise<{ name: string; path: string }[]>;
+  };
 }
 
 declare global {
   interface Window {
     electronAPI: ElectronAPI;
   }
+}
+
+// Theme context
+type Theme = 'light' | 'dark' | 'auto';
+
+interface ThemeContextType {
+  theme: Theme;
+  resolvedTheme: 'light' | 'dark';
+  setTheme: (theme: Theme) => void;
+}
+
+const ThemeContext = createContext<ThemeContextType>({
+  theme: 'dark',
+  resolvedTheme: 'dark',
+  setTheme: () => {},
+});
+
+export function useTheme() {
+  return useContext(ThemeContext);
+}
+
+function getSystemTheme(): 'light' | 'dark' {
+  if (window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
+  return 'light';
+}
+
+function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [theme, setThemeState] = useState<Theme>('dark');
+  const [resolvedTheme, setResolvedTheme] = useState<'light' | 'dark'>('dark');
+
+  const applyTheme = useCallback((t: Theme) => {
+    const resolved = t === 'auto' ? getSystemTheme() : t;
+    setResolvedTheme(resolved);
+    document.documentElement.classList.toggle('dark', resolved === 'dark');
+  }, []);
+
+  const setTheme = useCallback((t: Theme) => {
+    setThemeState(t);
+    applyTheme(t);
+    window.electronAPI?.config.set('theme', t);
+  }, [applyTheme]);
+
+  // Load saved theme on mount
+  useEffect(() => {
+    const loadTheme = async () => {
+      const saved = await window.electronAPI?.config.get('theme');
+      const t = saved || 'dark';
+      setThemeState(t);
+      applyTheme(t);
+    };
+    loadTheme();
+
+    // Listen for system theme changes when auto
+    const handler = () => {
+      if (theme === 'auto') applyTheme('auto');
+    };
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', handler);
+    return () => {
+      window.matchMedia('(prefers-color-scheme: dark)').removeEventListener('change', handler);
+    };
+  }, [applyTheme, theme]);
+
+  return (
+    <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  );
 }
 
 function App() {
@@ -53,7 +125,6 @@ function App() {
       }
     }, 3000);
 
-    // 检查 electronAPI 是否可用
     if (!window.electronAPI) {
       console.error('Electron API not available');
       setLoadError('Electron API 不可用');
@@ -68,39 +139,51 @@ function App() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-dark-950">
-        <div className="text-center">
-          <div className="text-4xl mb-4">🚀</div>
-          <div className="text-gray-400">Loading Ming...</div>
+      <ThemeProvider>
+        <div className="flex items-center justify-center h-screen" style={{ background: 'var(--bg-primary)' }}>
+          <div className="text-center">
+            <div className="text-4xl mb-4">銘</div>
+            <div style={{ color: 'var(--text-muted)' }}>Loading...</div>
+          </div>
         </div>
-      </div>
+      </ThemeProvider>
     );
   }
 
   if (loadError) {
     return (
-      <div className="flex items-center justify-center h-screen bg-dark-950">
-        <div className="text-center">
-          <div className="text-red-400 mb-2">启动失败</div>
-          <div className="text-gray-400 text-sm">{loadError}</div>
+      <ThemeProvider>
+        <div className="flex items-center justify-center h-screen" style={{ background: 'var(--bg-primary)' }}>
+          <div className="text-center">
+            <div style={{ color: 'var(--badge-error-text)' }} className="mb-2">启动失败</div>
+            <div style={{ color: 'var(--text-muted)' }} className="text-sm">{loadError}</div>
+          </div>
         </div>
-      </div>
+      </ThemeProvider>
     );
   }
 
   return (
-    <div className="flex h-screen bg-dark-950">
-      {/* 侧边栏 */}
-      <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
+    <ThemeProvider>
+      <div className="flex h-screen" style={{ background: 'var(--bg-primary)' }}>
+        {/* Sidebar */}
+        <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
 
-      {/* 主内容区 */}
-      <div className="flex-1 overflow-hidden">
-        {activeTab === 'dashboard' && <Dashboard />}
-        {activeTab === 'plugins' && <PluginManager />}
-        {activeTab === 'agents' && <AgentChat />}
-        {activeTab === 'settings' && <Settings />}
+        {/* Main content with drag bar */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* macOS drag bar */}
+          <div className="drag-region flex-shrink-0" style={{ height: '32px', background: 'var(--bg-secondary)' }} />
+
+          {/* Content */}
+          <div className="flex-1 overflow-hidden">
+            {activeTab === 'dashboard' && <Dashboard />}
+            {activeTab === 'plugins' && <PluginManager />}
+            {activeTab === 'agents' && <AgentChat />}
+            {activeTab === 'settings' && <Settings />}
+          </div>
+        </div>
       </div>
-    </div>
+    </ThemeProvider>
   );
 }
 

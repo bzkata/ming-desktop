@@ -3,34 +3,146 @@
 @tailwind utilities;
 
 @layer base {
+  /* ===== Light Theme ===== */
+  :root {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8fafc;
+    --bg-tertiary: #f1f5f9;
+    --bg-card: #ffffff;
+    --bg-input: #f1f5f9;
+    --bg-hover: #e2e8f0;
+    --border-default: #e2e8f0;
+    --border-hover: #cbd5e1;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
+    --accent: #0ea5e9;
+    --accent-hover: #0284c7;
+    --accent-text: #ffffff;
+    --accent-bg: rgba(14, 165, 233, 0.08);
+    --scrollbar-track: #f1f5f9;
+    --scrollbar-thumb: #cbd5e1;
+    --scrollbar-thumb-hover: #94a3b8;
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+    --badge-success-bg: rgba(34, 197, 94, 0.1);
+    --badge-success-text: #16a34a;
+    --badge-warning-bg: rgba(234, 179, 8, 0.1);
+    --badge-warning-text: #ca8a04;
+    --badge-error-bg: rgba(239, 68, 68, 0.1);
+    --badge-error-text: #dc2626;
+    --badge-info-bg: rgba(59, 130, 246, 0.1);
+    --badge-info-text: #2563eb;
+    --code-bg: #f1f5f9;
+  }
+
+  /* ===== Dark Theme ===== */
+  .dark {
+    --bg-primary: #020617;
+    --bg-secondary: #0f172a;
+    --bg-tertiary: #1e293b;
+    --bg-card: #0f172a;
+    --bg-input: #1e293b;
+    --bg-hover: #334155;
+    --border-default: #1e293b;
+    --border-hover: #334155;
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --accent: #0ea5e9;
+    --accent-hover: #38bdf8;
+    --accent-text: #ffffff;
+    --accent-bg: rgba(14, 165, 233, 0.15);
+    --scrollbar-track: #0f172a;
+    --scrollbar-thumb: #334155;
+    --scrollbar-thumb-hover: #475569;
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+    --badge-success-bg: rgba(34, 197, 94, 0.15);
+    --badge-success-text: #4ade80;
+    --badge-warning-bg: rgba(234, 179, 8, 0.15);
+    --badge-warning-text: #facc15;
+    --badge-error-bg: rgba(239, 68, 68, 0.15);
+    --badge-error-text: #f87171;
+    --badge-info-bg: rgba(59, 130, 246, 0.15);
+    --badge-info-text: #60a5fa;
+    --code-bg: #1e293b;
+  }
+
   * {
-    @apply border-dark-800;
+    border-color: var(--border-default);
   }
 
   body {
-    @apply bg-dark-950 text-gray-100 antialiased;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* macOS hiddenInset title bar drag region */
+  .drag-region {
+    -webkit-app-region: drag;
+  }
+  .no-drag {
+    -webkit-app-region: no-drag;
   }
 }
 
 @layer components {
   .btn {
-    @apply px-4 py-2 rounded-lg font-medium transition-all duration-200;
+    @apply px-4 py-2 rounded-lg font-medium transition-all duration-200 cursor-pointer;
   }
 
   .btn-primary {
-    @apply btn bg-primary-600 hover:bg-primary-700 text-white;
+    @apply btn text-white;
+    background: var(--accent);
+    color: var(--accent-text);
+  }
+  .btn-primary:hover {
+    background: var(--accent-hover);
+  }
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .btn-secondary {
-    @apply btn bg-dark-700 hover:bg-dark-600 text-gray-100;
+    @apply btn;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+  }
+  .btn-secondary:hover {
+    background: var(--bg-hover);
+  }
+
+  .btn-ghost {
+    @apply btn;
+    background: transparent;
+    color: var(--text-secondary);
+  }
+  .btn-ghost:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
   }
 
   .card {
-    @apply bg-dark-900 rounded-xl border border-dark-800 p-6;
+    background: var(--bg-card);
+    border: 1px solid var(--border-default);
+    box-shadow: var(--shadow-card);
+    @apply rounded-xl p-6;
   }
 
   .input {
-    @apply w-full px-4 py-2 bg-dark-800 border border-dark-700 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500;
+    @apply w-full px-4 py-2 rounded-lg focus:outline-none focus:ring-2;
+    background: var(--bg-input);
+    border: 1px solid var(--border-default);
+    color: var(--text-primary);
+    --tw-ring-color: var(--accent);
+  }
+  .input:focus {
+    border-color: var(--accent);
+  }
+  .input::placeholder {
+    color: var(--text-muted);
   }
 
   .badge {
@@ -38,73 +150,61 @@
   }
 
   .badge-success {
-    @apply badge bg-green-500/20 text-green-400;
+    @apply badge;
+    background: var(--badge-success-bg);
+    color: var(--badge-success-text);
   }
-
   .badge-warning {
-    @apply badge bg-yellow-500/20 text-yellow-400;
+    @apply badge;
+    background: var(--badge-warning-bg);
+    color: var(--badge-warning-text);
   }
-
   .badge-error {
-    @apply badge bg-red-500/20 text-red-400;
+    @apply badge;
+    background: var(--badge-error-bg);
+    color: var(--badge-error-text);
   }
-
   .badge-info {
-    @apply badge bg-blue-500/20 text-blue-400;
+    @apply badge;
+    background: var(--badge-info-bg);
+    color: var(--badge-info-text);
   }
 }
 
-/* 自定义滚动条 */
+/* Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
-
 ::-webkit-scrollbar-track {
-  @apply bg-dark-900;
+  background: var(--scrollbar-track);
 }
-
 ::-webkit-scrollbar-thumb {
-  @apply bg-dark-700 rounded-full;
+  background: var(--scrollbar-thumb);
+  border-radius: 9999px;
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-dark-600;
+  background: var(--scrollbar-thumb-hover);
 }
 
-/* Markdown 样式 */
+/* Markdown */
 .markdown {
-  @apply prose prose-invert max-w-none;
+  @apply max-w-none;
+  color: var(--text-primary);
 }
-
-.markdown h1 {
-  @apply text-2xl font-bold mb-4;
-}
-
-.markdown h2 {
-  @apply text-xl font-semibold mb-3;
-}
-
-.markdown h3 {
-  @apply text-lg font-medium mb-2;
-}
-
-.markdown p {
-  @apply mb-4;
-}
-
-.markdown ul {
-  @apply list-disc list-inside mb-4;
-}
-
+.markdown h1 { @apply text-2xl font-bold mb-4; }
+.markdown h2 { @apply text-xl font-semibold mb-3; }
+.markdown h3 { @apply text-lg font-medium mb-2; }
+.markdown p  { @apply mb-4; }
+.markdown ul { @apply list-disc list-inside mb-4; }
 .markdown code {
-  @apply bg-dark-800 px-2 py-1 rounded text-sm;
+  background: var(--code-bg);
+  @apply px-2 py-1 rounded text-sm;
 }
-
 .markdown pre {
-  @apply bg-dark-800 p-4 rounded-lg overflow-x-auto mb-4;
+  background: var(--code-bg);
+  @apply p-4 rounded-lg overflow-x-auto mb-4;
 }
-
 .markdown pre code {
   @apply bg-transparent p-0;
 }

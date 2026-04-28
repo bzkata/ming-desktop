@@ -5,6 +5,7 @@ export default {
   content: [
     "./src/renderer/**/*.{js,ts,jsx,tsx}",
   ],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
@@ -32,7 +33,7 @@ export default {
           800: '#1e293b',
           900: '#0f172a',
           950: '#020617',
-        }
+        },
       },
     },
   },

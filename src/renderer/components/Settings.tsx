@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Save, RotateCcw, Key, Settings as SettingsIcon, Palette, Globe, FileText } from 'lucide-react';
+import { Save, RotateCcw, Key, Settings as SettingsIcon, Palette, Globe, FileText, FolderOpen, Plus, X } from 'lucide-react';
 import LLMConfiguration from './LLMConfiguration';
 import {
   DEFAULT_DAILY_REPORT_TEMPLATE,
@@ -10,10 +10,7 @@ export default function Settings() {
   const [theme, setTheme] = useState<'light' | 'dark' | 'auto'>('dark');
   const [language, setLanguage] = useState('zh-CN');
   const [autoUpdate, setAutoUpdate] = useState(true);
-  const [workPaths, setWorkPaths] = useState({
-    bzdevBkdev: '~/bzdev/bkdev',
-    bzdevExdev: '~/bzdev/exdev'
-  });
+  const [workPaths, setWorkPaths] = useState<string[]>([]);
   const [dailyReportTemplate, setDailyReportTemplate] = useState(DEFAULT_DAILY_REPORT_TEMPLATE);
   const [dailyReporterSystemPrompt, setDailyReporterSystemPrompt] = useState(
     DEFAULT_DAILY_REPORTER_SYSTEM_PROMPT
@@ -27,21 +24,17 @@ export default function Settings() {
   const loadSettings = async () => {
     try {
       const config = await window.electronAPI.config.getAll();
-      setTheme(config.theme);
-      setLanguage(config.language);
-      setAutoUpdate(config.autoUpdate);
-      if (config.workPaths) {
+      setTheme(config.theme || 'dark');
+      setLanguage(config.language || 'zh-CN');
+      setAutoUpdate(config.autoUpdate !== false);
+      if (Array.isArray(config.workPaths)) {
         setWorkPaths(config.workPaths);
       }
       if (config.dailyReportTemplate) {
         setDailyReportTemplate(config.dailyReportTemplate);
-      } else {
-        setDailyReportTemplate(DEFAULT_DAILY_REPORT_TEMPLATE);
       }
       if (config.dailyReporterSystemPrompt) {
         setDailyReporterSystemPrompt(config.dailyReporterSystemPrompt);
-      } else {
-        setDailyReporterSystemPrompt(DEFAULT_DAILY_REPORTER_SYSTEM_PROMPT);
       }
     } catch (error) {
       console.error('Failed to load settings:', error);
@@ -57,7 +50,6 @@ export default function Settings() {
       await window.electronAPI.config.set('workPaths', workPaths);
       await window.electronAPI.config.set('dailyReportTemplate', dailyReportTemplate);
       await window.electronAPI.config.set('dailyReporterSystemPrompt', dailyReporterSystemPrompt);
-      // 可以添加成功提示
     } catch (error) {
       console.error('Failed to save settings:', error);
     } finally {
@@ -71,10 +63,7 @@ export default function Settings() {
         await window.electronAPI.config.set('theme', 'dark');
         await window.electronAPI.config.set('language', 'zh-CN');
         await window.electronAPI.config.set('autoUpdate', true);
-        await window.electronAPI.config.set('workPaths', {
-          bzdevBkdev: '~/bzdev/bkdev',
-          bzdevExdev: '~/bzdev/exdev'
-        });
+        await window.electronAPI.config.set('workPaths', []);
         await window.electronAPI.config.set('dailyReportTemplate', DEFAULT_DAILY_REPORT_TEMPLATE);
         await window.electronAPI.config.set(
           'dailyReporterSystemPrompt',
@@ -87,30 +76,57 @@ export default function Settings() {
     }
   };
 
+  const handleAddPath = async () => {
+    try {
+      const result = await window.electronAPI.dialog.showOpenDialog({
+        title: '选择工作目录',
+        properties: ['openDirectory', 'multiSelections'],
+      });
+      if (!result.canceled && result.filePaths.length > 0) {
+        const newPaths = [...workPaths];
+        for (const p of result.filePaths) {
+          if (!newPaths.includes(p)) {
+            newPaths.push(p);
+          }
+        }
+        setWorkPaths(newPaths);
+        await window.electronAPI.config.set('workPaths', newPaths);
+      }
+    } catch (error) {
+      console.error('Failed to open dialog:', error);
+    }
+  };
+
+  const handleRemovePath = async (index: number) => {
+    const newPaths = workPaths.filter((_, i) => i !== index);
+    setWorkPaths(newPaths);
+    await window.electronAPI.config.set('workPaths', newPaths);
+  };
+
   return (
     <div className="h-full overflow-y-auto p-8">
       <div className="max-w-3xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Settings</h1>
-          <p className="text-gray-400">Configure your Ming</p>
+          <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Settings</h1>
+          <p style={{ color: 'var(--text-muted)' }}>Configure your 銘</p>
         </div>
 
         {/* Appearance */}
         <div className="card mb-6">
           <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 bg-primary-500/20 rounded-lg">
-              <Palette className="text-primary-400" size={20} />
+            <div className="p-2 rounded-lg" style={{ background: 'var(--accent-bg)' }}>
+              <Palette size={20} style={{ color: 'var(--accent)' }} />
             </div>
             <div>
-              <h2 className="text-lg font-semibold">Appearance</h2>
-              <p className="text-sm text-gray-400">Customize the look and feel</p>
+              <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Appearance</h2>
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Customize the look and feel</p>
             </div>
           </div>
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-2">Theme</label>
+              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>Theme</label>
               <select
                 value={theme}
                 onChange={(e) => setTheme(e.target.value as any)}
@@ -118,12 +134,12 @@ export default function Settings() {
               >
                 <option value="light">Light</option>
                 <option value="dark">Dark</option>
-                <option value="auto">Auto</option>
+                <option value="auto">Auto (System)</option>
               </select>
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">Language</label>
+              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>Language</label>
               <select
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
@@ -139,30 +155,28 @@ export default function Settings() {
         {/* General */}
         <div className="card mb-6">
           <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 bg-green-500/20 rounded-lg">
-              <Globe className="text-green-400" size={20} />
+            <div className="p-2 rounded-lg" style={{ background: 'var(--badge-success-bg)' }}>
+              <Globe size={20} style={{ color: 'var(--badge-success-text)' }} />
             </div>
             <div>
-              <h2 className="text-lg font-semibold">General</h2>
-              <p className="text-sm text-gray-400">General application settings</p>
+              <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>General</h2>
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>General application settings</p>
             </div>
           </div>
 
           <div className="flex items-center justify-between">
             <div>
-              <div className="font-medium">Auto Update</div>
-              <div className="text-sm text-gray-400">Automatically check for updates</div>
+              <div className="font-medium" style={{ color: 'var(--text-primary)' }}>Auto Update</div>
+              <div className="text-sm" style={{ color: 'var(--text-muted)' }}>Automatically check for updates</div>
             </div>
             <button
               onClick={() => setAutoUpdate(!autoUpdate)}
-              className={`relative w-12 h-6 rounded-full transition-colors ${
-                autoUpdate ? 'bg-primary-600' : 'bg-dark-700'
-              }`}
+              className="relative w-12 h-6 rounded-full transition-colors"
+              style={{ background: autoUpdate ? 'var(--accent)' : 'var(--bg-tertiary)' }}
             >
               <div
-                className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${
-                  autoUpdate ? 'left-7' : 'left-1'
-                }`}
+                className="absolute top-1 w-4 h-4 bg-white rounded-full transition-all"
+                style={{ left: autoUpdate ? '1.75rem' : '0.25rem' }}
               />
             </button>
           </div>
@@ -171,53 +185,62 @@ export default function Settings() {
         {/* Work Paths */}
         <div className="card mb-6">
           <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 bg-purple-500/20 rounded-lg">
-              <SettingsIcon className="text-purple-400" size={20} />
+            <div className="p-2 rounded-lg" style={{ background: 'var(--badge-info-bg)' }}>
+              <SettingsIcon size={20} style={{ color: 'var(--badge-info-text)' }} />
             </div>
             <div>
-              <h2 className="text-lg font-semibold">Work Paths</h2>
-              <p className="text-sm text-gray-400">Configure your project directories</p>
+              <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Work Paths</h2>
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Select your project directories for daily reports</p>
             </div>
           </div>
 
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">bkdev Directory</label>
-              <input
-                type="text"
-                value={workPaths.bzdevBkdev}
-                onChange={(e) =>
-                  setWorkPaths({ ...workPaths, bzdevBkdev: e.target.value })
-                }
-                className="input"
-                placeholder="~/bzdev/bkdev"
-              />
-            </div>
+          <div className="space-y-3">
+            {workPaths.map((path, index) => (
+              <div
+                key={index}
+                className="flex items-center gap-2 p-3 rounded-lg"
+                style={{ background: 'var(--bg-input)', border: '1px solid var(--border-default)' }}
+              >
+                <FolderOpen size={16} style={{ color: 'var(--text-muted)' }} className="flex-shrink-0" />
+                <span className="flex-1 text-sm truncate" style={{ color: 'var(--text-primary)' }}>{path}</span>
+                <button
+                  onClick={() => handleRemovePath(index)}
+                  className="p-1 rounded transition-colors flex-shrink-0"
+                  style={{ color: 'var(--text-muted)' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--badge-error-text)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; }}
+                  title="Remove"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
 
-            <div>
-              <label className="block text-sm font-medium mb-2">exdev Directory</label>
-              <input
-                type="text"
-                value={workPaths.bzdevExdev}
-                onChange={(e) =>
-                  setWorkPaths({ ...workPaths, bzdevExdev: e.target.value })
-                }
-                className="input"
-                placeholder="~/bzdev/exdev"
-              />
-            </div>
+            {workPaths.length === 0 && (
+              <p className="text-sm py-2" style={{ color: 'var(--text-muted)' }}>
+                No paths configured. Click "Add Folder" to get started.
+              </p>
+            )}
+
+            <button
+              onClick={handleAddPath}
+              className="btn-secondary flex items-center gap-2"
+            >
+              <Plus size={16} />
+              Add Folder
+            </button>
           </div>
         </div>
 
         {/* Daily report prompts */}
         <div className="card mb-6">
           <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 bg-cyan-500/20 rounded-lg">
-              <FileText className="text-cyan-400" size={20} />
+            <div className="p-2 rounded-lg" style={{ background: 'var(--accent-bg)' }}>
+              <FileText size={20} style={{ color: 'var(--accent)' }} />
             </div>
             <div>
-              <h2 className="text-lg font-semibold">日报提示词与模板</h2>
-              <p className="text-sm text-gray-400">
+              <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>日报提示词与模板</h2>
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                 下方模板用于从 Git 生成 Markdown 日报；系统提示词用于「Daily Reporter」对话 Agent
               </p>
             </div>
@@ -225,8 +248,8 @@ export default function Settings() {
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-2">日报 Markdown 模板</label>
-              <p className="text-xs text-gray-500 mb-2">
+              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>日报 Markdown 模板</label>
+              <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
                 占位符：{'{date}'} {'{total_commits}'} {'{total_repos}'} {'{work_hours}'} {'{commit_details}'}{' '}
                 {'{stats}'} {'{generated_at}'}
               </p>
@@ -238,7 +261,7 @@ export default function Settings() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-2">Daily Reporter 系统提示词</label>
+              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>Daily Reporter 系统提示词</label>
               <textarea
                 value={dailyReporterSystemPrompt}
                 onChange={(e) => setDailyReporterSystemPrompt(e.target.value)}
@@ -252,12 +275,12 @@ export default function Settings() {
         {/* LLM Configuration */}
         <div className="card mb-6">
           <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 bg-orange-500/20 rounded-lg">
-              <Key className="text-orange-400" size={20} />
+            <div className="p-2 rounded-lg" style={{ background: 'var(--badge-warning-bg)' }}>
+              <Key size={20} style={{ color: 'var(--badge-warning-text)' }} />
             </div>
             <div>
-              <h2 className="text-lg font-semibold">LLM Configuration</h2>
-              <p className="text-sm text-gray-400">API keys, models, and default provider for Agent chat</p>
+              <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>LLM Configuration</h2>
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>API keys, models, and default provider for Agent chat</p>
             </div>
           </div>
 

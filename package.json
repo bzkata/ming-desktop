@@ -2,7 +2,7 @@
   "name": "ming-desktop",
   "version": "0.1.0",
   "description": "Ming - AI Agent & Tools Platform",
-  "main": "dist/main/main.js",
+  "main": "dist/main/main/main.js",
   "author": "Ming Team",
   "license": "MIT",
   "private": true,
