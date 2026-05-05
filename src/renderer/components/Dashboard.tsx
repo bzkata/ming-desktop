@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Calendar, Clock, GitBranch, FileText, TrendingUp, Play, RefreshCw, ChevronDown, ChevronUp, Folder } from 'lucide-react';
+import { Calendar, Clock, GitBranch, FileText, TrendingUp, Play, RefreshCw, Folder, Activity } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './ui/select';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from './ui/sheet';
 import { cn } from '@/lib/utils';
 
 interface GitRepo {
@@ -14,7 +15,7 @@ interface GitRepo {
 export default function Dashboard() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [report, setReport] = useState<string>('');
-  const [timeRange, setTimeRange] = useState<'today' | 'yesterday' | 'week'>('today');
+  const [timeRange, setTimeRange] = useState<'today' | 'yesterday' | 'day_before_yesterday' | 'week'>('today');
   const [stats, setStats] = useState({
     totalCommits: 0,
     totalRepos: 0,
@@ -23,7 +24,8 @@ export default function Dashboard() {
   const [workPaths, setWorkPaths] = useState<string[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [gitRepos, setGitRepos] = useState<GitRepo[]>([]);
-  const [showRepoList, setShowRepoList] = useState(false);
+  const [activeSheet, setActiveSheet] = useState<'commits' | 'repos' | null>(null);
+  const [activeRepoNames, setActiveRepoNames] = useState<Set<string>>(new Set());
 
   const loadWorkPaths = useCallback(async () => {
     try {
@@ -51,7 +53,6 @@ export default function Dashboard() {
     loadWorkPaths();
   }, [loadWorkPaths]);
 
-  // Load git repos when workPaths change
   useEffect(() => {
     if (workPaths.length > 0) {
       loadGitRepos();
@@ -70,6 +71,7 @@ export default function Dashboard() {
 
       if (repoPaths.length === 0) {
         setStats({ totalCommits: 0, totalRepos: 0, workHours: 0 });
+        setActiveRepoNames(new Set());
         return;
       }
 
@@ -80,30 +82,28 @@ export default function Dashboard() {
       });
 
       if (result.success) {
-        const lines = result.data.report.split('\n');
-        let totalCommits = 0;
-        let totalRepos = 0;
-        let workHours = 0;
-
-        lines.forEach((line: string) => {
-          const commitMatch = line.match(/提交总数:\s*(\d+)/);
-          if (commitMatch) totalCommits = parseInt(commitMatch[1]);
-          const repoMatch = line.match(/涉及仓库:\s*(\d+)/);
-          if (repoMatch) totalRepos = parseInt(repoMatch[1]);
-          const hoursMatch = line.match(/工作时间:\s*([\d.]+)/);
-          if (hoursMatch) workHours = parseFloat(hoursMatch[1]);
-        });
-
-        setStats({ totalCommits, totalRepos, workHours });
+        const s = result.data.stats;
+        if (s) {
+          setStats({ totalCommits: s.totalCommits || 0, totalRepos: s.totalRepos || 0, workHours: s.workHours || 0 });
+        }
+        // Extract active repo names from report
+        const activeNames = new Set<string>();
+        const lines = (result.data.report || '').split('\n');
+        for (const line of lines) {
+          const m = line.match(/###\s*📁\s*(.+)/);
+          if (m) activeNames.add(m[1].trim());
+        }
+        setActiveRepoNames(activeNames);
+        // Cache report for detail view
+        setReport(result.data.report);
       }
     } catch {
-      // silently fail on refresh
+      // silently fail
     } finally {
       setIsRefreshing(false);
     }
   }, [timeRange]);
 
-  // Auto-fetch stats when workPaths or timeRange changes
   useEffect(() => {
     if (workPaths.length > 0) {
       fetchStats();
@@ -112,8 +112,6 @@ export default function Dashboard() {
 
   const handleGenerateReport = async () => {
     setIsGenerating(true);
-    setReport('');
-
     try {
       const paths = await window.electronAPI.config.get('workPaths');
       const repoPaths = Array.isArray(paths) && paths.length > 0
@@ -133,16 +131,19 @@ export default function Dashboard() {
 
       if (result.success) {
         setReport(result.data.report);
-        // Parse stats
-        const lines = result.data.report.split('\n');
-        lines.forEach((line: string) => {
-          const commitMatch = line.match(/提交总数:\s*(\d+)/);
-          if (commitMatch) setStats(prev => ({ ...prev, totalCommits: parseInt(commitMatch[1]) }));
-          const repoMatch = line.match(/涉及仓库:\s*(\d+)/);
-          if (repoMatch) setStats(prev => ({ ...prev, totalRepos: parseInt(repoMatch[1]) }));
-          const hoursMatch = line.match(/工作时间:\s*([\d.]+)/);
-          if (hoursMatch) setStats(prev => ({ ...prev, workHours: parseFloat(hoursMatch[1]) }));
-        });
+        const s = result.data.stats;
+        if (s) {
+          setStats({ totalCommits: s.totalCommits || 0, totalRepos: s.totalRepos || 0, workHours: s.workHours || 0 });
+        }
+        // Update active repos
+        const activeNames = new Set<string>();
+        const lines = (result.data.report || '').split('\n');
+        for (const line of lines) {
+          const m = line.match(/###\s*📁\s*(.+)/);
+          if (m) activeNames.add(m[1].trim());
+        }
+        setActiveRepoNames(activeNames);
+        setActiveSheet('commits');
       } else {
         setReport(`生成失败: ${result.error}`);
       }
@@ -157,9 +158,34 @@ export default function Dashboard() {
     <div className="h-full overflow-y-auto p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2 text-foreground">Dashboard</h1>
-          <p className="text-muted-foreground">Welcome to 銘</p>
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold mb-2 text-foreground">Dashboard</h1>
+            <p className="text-muted-foreground">Welcome to 銘</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Select value={timeRange} onValueChange={(value) => setTimeRange(value as any)}>
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="today">今天</SelectItem>
+                <SelectItem value="yesterday">昨天</SelectItem>
+                <SelectItem value="day_before_yesterday">前天</SelectItem>
+                <SelectItem value="week">This Week</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={fetchStats}
+              disabled={isRefreshing}
+              title="Refresh"
+            >
+              <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
+            </Button>
+          </div>
         </div>
 
         {/* Work Paths Info */}
@@ -195,24 +221,15 @@ export default function Dashboard() {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <Card>
+          <Card
+            className={cn('cursor-pointer select-none transition-colors', stats.totalCommits > 0 && 'hover:border-primary/50')}
+            onClick={() => { if (stats.totalCommits > 0) setActiveSheet('commits'); }}
+            title={stats.totalCommits > 0 ? 'Click to view commit details' : 'No commits in this period'}
+          >
             <CardContent className="pt-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="p-3 rounded-lg bg-accent">
                   <GitBranch size={24} className="text-primary" />
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">Today</span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={fetchStats}
-                    disabled={isRefreshing}
-                    title="Refresh stats"
-                  >
-                    <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
-                  </Button>
                 </div>
               </div>
               <div className="text-3xl font-bold mb-1 text-foreground">{stats.totalCommits}</div>
@@ -221,19 +238,16 @@ export default function Dashboard() {
           </Card>
 
           <Card
-            className="cursor-pointer select-none"
-            onClick={() => setShowRepoList(!showRepoList)}
-            title="Click to toggle repo list"
+            className="cursor-pointer select-none hover:border-emerald-500/50 transition-colors"
+            onClick={() => setActiveSheet('repos')}
+            title="Click to view repository list"
           >
             <CardContent className="pt-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="p-3 rounded-lg bg-emerald-500/10">
                   <FileText size={24} className="text-emerald-500" />
                 </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <span className="text-sm">Scanned</span>
-                  {showRepoList ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                </div>
+                <span className="text-sm text-muted-foreground">{activeRepoNames.size} active</span>
               </div>
               <div className="text-3xl font-bold mb-1 text-foreground">{gitRepos.length}</div>
               <div className="text-sm text-muted-foreground">Git Repositories</div>
@@ -254,14 +268,52 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        {/* Git Repo List */}
-        {showRepoList && (
-          <Card className="mb-8">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">
+        {/* Commit Detail Sheet */}
+        <Sheet open={activeSheet === 'commits'} onOpenChange={(open) => !open && setActiveSheet(null)}>
+          <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
+            <SheetHeader>
+              <div className="flex items-center justify-between pr-6">
+                <SheetTitle className="flex items-center gap-2">
+                  <Calendar size={18} />
+                  Commit Details ({stats.totalCommits} commits in {activeRepoNames.size} repos)
+                </SheetTitle>
+              </div>
+              <SheetDescription>
+                Git commit details for the selected time range
+              </SheetDescription>
+            </SheetHeader>
+            <div className="mt-6">
+              <div className="flex justify-end mb-4">
+                <Button
+                  onClick={handleGenerateReport}
+                  disabled={isGenerating}
+                  size="sm"
+                >
+                  <Play size={14} />
+                  {isGenerating ? 'Generating...' : 'Regenerate'}
+                </Button>
+              </div>
+              {report && (
+                <div className="rounded-lg p-4 overflow-x-auto bg-muted">
+                  <div className="markdown text-sm">
+                    {report.split('\n').map((line, index) => (
+                      <div key={index} className="mb-0.5">{line}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </SheetContent>
+        </Sheet>
+
+        {/* Git Repo List Sheet */}
+        <Sheet open={activeSheet === 'repos'} onOpenChange={(open) => !open && setActiveSheet(null)}>
+          <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
+            <SheetHeader>
+              <div className="flex items-center justify-between pr-6">
+                <SheetTitle>
                   Git Repositories ({gitRepos.length})
-                </CardTitle>
+                </SheetTitle>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -272,33 +324,50 @@ export default function Dashboard() {
                   <RefreshCw size={14} />
                 </Button>
               </div>
-            </CardHeader>
-            <CardContent>
+              <SheetDescription>
+                Repositories found in your configured work paths
+              </SheetDescription>
+            </SheetHeader>
+            <div className="mt-6">
               {gitRepos.length === 0 ? (
                 <p className="text-sm py-2 text-muted-foreground">
                   No git repositories found in configured work paths.
                 </p>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-80 overflow-y-auto">
-                  {gitRepos.map((repo, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center gap-2 p-2.5 rounded-lg text-sm bg-input border"
-                    >
-                      <Folder size={14} className="text-muted-foreground flex-shrink-0" />
-                      <span className="font-medium truncate text-foreground">
-                        {repo.name}
-                      </span>
-                      <span className="text-xs truncate ml-auto flex-shrink-0 text-muted-foreground" title={repo.path}>
-                        {repo.path.replace(/^\/Users\/[^/]+/, '~')}
-                      </span>
-                    </div>
-                  ))}
+                <div className="grid grid-cols-1 gap-2">
+                  {gitRepos.map((repo, i) => {
+                    const isActive = activeRepoNames.has(repo.name);
+                    return (
+                      <div
+                        key={i}
+                        className={cn(
+                          'flex items-center gap-2 p-2.5 rounded-lg text-sm border',
+                          isActive
+                            ? 'bg-primary/5 border-primary/30'
+                            : 'bg-input border-border'
+                        )}
+                      >
+                        <Folder size={14} className="text-muted-foreground flex-shrink-0" />
+                        <span className={cn('font-medium truncate', isActive ? 'text-foreground' : 'text-foreground/70')}>
+                          {repo.name}
+                        </span>
+                        {isActive && (
+                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 bg-primary/10 text-primary border-0 flex-shrink-0">
+                            <Activity size={10} className="mr-0.5" />
+                            active
+                          </Badge>
+                        )}
+                        <span className="text-xs truncate ml-auto flex-shrink-0 text-muted-foreground" title={repo.path}>
+                          {repo.path.replace(/^\/Users\/[^/]+/, '~')}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
-            </CardContent>
-          </Card>
-        )}
+            </div>
+          </SheetContent>
+        </Sheet>
 
         {/* Daily Report Generator */}
         <Card className="mb-8">
@@ -314,47 +383,15 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
-                <Select value={timeRange} onValueChange={(value) => setTimeRange(value as any)}>
-                  <SelectTrigger className="w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="today">Today</SelectItem>
-                    <SelectItem value="yesterday">Yesterday</SelectItem>
-                    <SelectItem value="week">This Week</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <Button
-                  onClick={handleGenerateReport}
-                  disabled={isGenerating}
-                >
-                  <Play size={18} />
-                  {isGenerating ? 'Generating...' : 'Generate'}
-                </Button>
-              </div>
+              <Button
+                onClick={handleGenerateReport}
+                disabled={isGenerating}
+              >
+                <Play size={18} />
+                {isGenerating ? 'Generating...' : 'Generate'}
+              </Button>
             </div>
           </CardHeader>
-
-          {/* Report Output */}
-          {report && (
-            <CardContent>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold flex items-center gap-2 text-foreground">
-                  <Calendar size={20} />
-                  Generated Report
-                </h3>
-              </div>
-              <div className="rounded-lg p-6 overflow-x-auto bg-muted">
-                <div className="markdown">
-                  {report.split('\n').map((line, index) => (
-                    <div key={index} className="mb-1">{line}</div>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          )}
         </Card>
 
         {/* Quick Actions */}
