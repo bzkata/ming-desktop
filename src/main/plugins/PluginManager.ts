@@ -228,21 +228,41 @@ export class PluginManager extends EventEmitter {
       };
     }
 
+    // Read report from file (most reliable)
     const today = new Date().toISOString().split('T')[0];
     const reportPath = path.join(outputDir, `daily-report-${today}.markdown`);
 
     let reportContent = '';
     try {
       reportContent = await fs.readFile(reportPath, 'utf-8');
-    } catch (error) {
-      reportContent = result.stdout;
+    } catch {
+      // Fallback: extract report from stdout (between last pair of === lines)
+      const stdout = result.stdout || '';
+      const eqLines = [...stdout.matchAll(/^={10,}$/gm)].map(m => m.index!);
+      if (eqLines.length >= 2) {
+        reportContent = stdout.slice(eqLines[eqLines.length - 2], eqLines[eqLines.length - 1]).trim();
+      } else {
+        reportContent = stdout;
+      }
+    }
+
+    // Extract structured stats from report
+    const stats = { totalCommits: 0, totalRepos: 0, workHours: 0 };
+    for (const line of reportContent.split('\n')) {
+      const cm = line.match(/提交总数:\s*(\d+)/);
+      if (cm) stats.totalCommits = parseInt(cm[1]);
+      const rm = line.match(/涉及仓库:\s*(\d+)/);
+      if (rm) stats.totalRepos = parseInt(rm[1]);
+      const hm = line.match(/工作时间:\s*([\d.]+)/);
+      if (hm) stats.workHours = parseFloat(hm[1]);
     }
 
     return {
       success: true,
       data: {
         report: reportContent,
-        reportPath
+        reportPath,
+        stats
       },
       logs: [result.stdout]
     };

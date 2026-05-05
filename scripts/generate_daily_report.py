@@ -103,20 +103,19 @@ def has_commits_today(repo_path, since_date, until_date=None, include_all_branch
             "log",
             f"--since={since_date}",
             "--oneline",
-            "--count"  # 只返回提交数量
+            "--all" if include_all_branches else None,
         ]
+        cmd = [c for c in cmd if c is not None]
 
         if until_date:
             cmd.append(f"--until={until_date}")
-
-        if include_all_branches:
-            cmd.append("--all")
 
         if author:
             cmd.extend(["--author", author])
 
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        count = int(result.stdout.strip())
+        lines = [l for l in result.stdout.strip().split('\n') if l.strip()]
+        count = len(lines)
         return count > 0, count
     except Exception:
         return False, 0
@@ -264,6 +263,11 @@ def get_time_range(range_type):
         since = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
         until = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999)
         return since.strftime("%Y-%m-%d %H:%M:%S"), until.strftime("%Y-%m-%d %H:%M:%S")
+    elif range_type == "day_before_yesterday":
+        day = now - timedelta(days=2)
+        since = day.replace(hour=0, minute=0, second=0, microsecond=0)
+        until = day.replace(hour=23, minute=59, second=59, microsecond=999999)
+        return since.strftime("%Y-%m-%d %H:%M:%S"), until.strftime("%Y-%m-%d %H:%M:%S")
     elif range_type == "week":
         week_ago = now - timedelta(days=7)
         return week_ago.strftime("%Y-%m-%d %H:%M:%S"), None
@@ -393,7 +397,7 @@ def _config_from_env():
         cfg["base_paths"] = [p.strip() for p in repo_csv.split(",") if p.strip()]
 
     tr = os.environ.get("TIME_RANGE", "").strip().lower()
-    if tr in ("today", "yesterday", "week"):
+    if tr in ("today", "yesterday", "day_before_yesterday", "week"):
         cfg["time_range"] = tr
 
     iab = os.environ.get("INCLUDE_ALL_BRANCHES", "").strip().lower()

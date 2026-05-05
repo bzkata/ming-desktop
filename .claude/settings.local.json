@@ -26,7 +26,14 @@
       "Bash(sqlite3 \"/Users/bloks/Library/Application Support/ming-desktop/ming-desktop.db\" \"SELECT id, name FROM _migrations;\")",
       "Bash(sqlite3:*)",
       "Bash(npx shadcn@latest:*)",
-      "Skill(update-config)"
+      "Skill(update-config)",
+      "Bash(REPO_PATHS=\"/Users/bloks/bzdev/bkdev/backend,/Users/bloks/bzdev/bkdev/mobiles\" TIME_RANGE=\"week\" INCLUDE_ALL_BRANCHES=\"true\" python3 scripts/generate_daily_report.py)",
+      "Bash(REPO_PATHS=\"/Users/bloks/bzdev/bkdev/mobiles\" TIME_RANGE=\"week\" INCLUDE_ALL_BRANCHES=\"true\" python3:*)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(REPO_PATHS=\"/Users/bloks/bzdev/bkdev/mobiles\" TIME_RANGE=\"day_before_yesterday\" INCLUDE_ALL_BRANCHES=\"true\" python3 scripts/generate_daily_report.py)",
+      "Bash(REPO_PATHS=\"/Users/bloks/bzdev/bkdev/backend,/Users/bloks/bzdev/bkdev/mobiles\" TIME_RANGE=\"today\" INCLUDE_ALL_BRANCHES=\"true\" python3 scripts/generate_daily_report.py)",
+      "Bash(timeout 10 npx electron .)",
+      "Bash(npx tsc:*)"
     ]
   }
 }
