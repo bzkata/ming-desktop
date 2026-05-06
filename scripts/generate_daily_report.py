@@ -14,6 +14,7 @@ from pathlib import Path
 import os
 import sys
 import time
+import json
 
 
 def _apply_report_template(template: str, **placeholders: str) -> str:
@@ -298,7 +299,7 @@ def generate_report(config=None):
 
     if not repo_paths:
         print("⚠️  没有找到任何Git仓库！")
-        return "今天没有代码提交记录。"
+        return "今天没有代码提交记录。", []
 
     # 快速过滤：只处理今天有提交的仓库
     print(f"🔍 快速检查今天有改动的仓库...")
@@ -325,7 +326,7 @@ def generate_report(config=None):
 
     if not active_repos:
         print("⚠️  今天没有仓库有提交记录")
-        return "今天没有代码提交记录。"
+        return "今天没有代码提交记录。", []
 
     # 收集所有提交（只从有改动的仓库）
     print(f"📝 正在获取详细提交信息...")
@@ -349,10 +350,10 @@ def generate_report(config=None):
     print(f"✅ 获取完成: {len(all_commits)} 个提交 (耗时: {fetch_time:.2f}秒)")
 
     if not all_commits:
-        return "今天没有代码提交记录。"
+        return "今天没有代码提交记录。", []
 
     # 格式化报告
-    details, stats = format_report(all_commits, datetime.now().strftime("%Y-%m-%d"))
+    details, stats_text = format_report(all_commits, datetime.now().strftime("%Y-%m-%d"))
 
     # 填充模板（占位符：date, total_commits, total_repos, work_hours, commit_details, stats, generated_at）
     report = _apply_report_template(
@@ -362,14 +363,14 @@ def generate_report(config=None):
         total_repos=str(len(set(c["repo"] for c in all_commits))),
         work_hours=str(round(len(all_commits) * 0.5, 1)),
         commit_details=details,
-        stats=stats,
+        stats=stats_text,
         generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     )
 
-    return report
+    return report, all_commits
 
 
-def save_report(report, config=None):
+def save_report(report, config=None, commits=None):
     """保存报告到文件"""
     if config is None:
         config = CONFIG
@@ -378,14 +379,30 @@ def save_report(report, config=None):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     today = datetime.now().strftime("%Y-%m-%d")
-    filename = f"daily-report-{today}.{config['output_format']}"
-    filepath = output_dir / filename
+    fmt = config["output_format"]
 
-    with open(filepath, 'w', encoding='utf-8') as f:
-        f.write(report)
-
-    print(f"✅ 日报已保存到: {filepath}")
-    return str(filepath)
+    if fmt == "json" and commits is not None:
+        filename = f"daily-report-{today}.json"
+        filepath = output_dir / filename
+        data = {
+            "commits": commits,
+            "stats": {
+                "totalCommits": len(commits),
+                "totalRepos": len(set(c["repo"] for c in commits)),
+                "workHours": round(len(commits) * 0.5, 1),
+            }
+        }
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        print(f"__OUTPUT_FILE__:{filepath}")
+        return str(filepath)
+    else:
+        filename = f"daily-report-{today}.{fmt}"
+        filepath = output_dir / filename
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(report)
+        print(f"__OUTPUT_FILE__:{filepath}")
+        return str(filepath)
 
 
 def _config_from_env():
@@ -436,10 +453,10 @@ def main():
     runtime_config = _config_from_env()
 
     # 生成报告
-    report = generate_report(runtime_config)
+    report, commits = generate_report(runtime_config)
 
     # 保存报告
-    filepath = save_report(report, runtime_config)
+    filepath = save_report(report, runtime_config, commits)
 
     total_time = time.time() - total_start
 

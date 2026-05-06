@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Calendar, Clock, GitBranch, FileText, TrendingUp, Play, RefreshCw, Folder, Activity } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Calendar, Clock, GitBranch, FileText, TrendingUp, Play, RefreshCw, Folder, Activity, User, Plus, Minus } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from './ui/sheet';
+import { Switch } from './ui/switch';
 import { cn } from '@/lib/utils';
 
 interface GitRepo {
@@ -12,9 +13,21 @@ interface GitRepo {
   path: string;
 }
 
+interface CommitInfo {
+  hash: string;
+  date: string;
+  author: string;
+  message: string;
+  repo: string;
+  files_changed: string[];
+  additions: number;
+  deletions: number;
+  branches: string;
+}
+
 export default function Dashboard() {
   const [isGenerating, setIsGenerating] = useState(false);
-  const [report, setReport] = useState<string>('');
+  const [commits, setCommits] = useState<CommitInfo[]>([]);
   const [timeRange, setTimeRange] = useState<'today' | 'yesterday' | 'day_before_yesterday' | 'week'>('today');
   const [stats, setStats] = useState({
     totalCommits: 0,
@@ -26,6 +39,7 @@ export default function Dashboard() {
   const [gitRepos, setGitRepos] = useState<GitRepo[]>([]);
   const [activeSheet, setActiveSheet] = useState<'commits' | 'repos' | null>(null);
   const [activeRepoNames, setActiveRepoNames] = useState<Set<string>>(new Set());
+  const [onlyMine, setOnlyMine] = useState(false);
 
   const loadWorkPaths = useCallback(async () => {
     try {
@@ -86,16 +100,20 @@ export default function Dashboard() {
         if (s) {
           setStats({ totalCommits: s.totalCommits || 0, totalRepos: s.totalRepos || 0, workHours: s.workHours || 0 });
         }
-        // Extract active repo names from report
         const activeNames = new Set<string>();
-        const lines = (result.data.report || '').split('\n');
-        for (const line of lines) {
-          const m = line.match(/###\s*📁\s*(.+)/);
-          if (m) activeNames.add(m[1].trim());
+        if (result.data.commits?.length > 0) {
+          setCommits(result.data.commits);
+          for (const c of result.data.commits) {
+            activeNames.add(c.repo);
+          }
+        } else {
+          const lines = (result.data.report || '').split('\n');
+          for (const line of lines) {
+            const m = line.match(/###\s*📁\s*(.+)/);
+            if (m) activeNames.add(m[1].trim());
+          }
         }
         setActiveRepoNames(activeNames);
-        // Cache report for detail view
-        setReport(result.data.report);
       }
     } catch {
       // silently fail
@@ -119,7 +137,7 @@ export default function Dashboard() {
         : [];
 
       if (repoPaths.length === 0) {
-        setReport('未配置工作目录，请先在 Settings 中添加 Work Paths');
+        setCommits([]);
         return;
       }
 
@@ -127,32 +145,50 @@ export default function Dashboard() {
         timeRange,
         repoPaths,
         includeAllBranches: true,
+        ...(onlyMine ? { filterByAuthor: 'zhangbing' } : {}),
       });
 
       if (result.success) {
-        setReport(result.data.report);
         const s = result.data.stats;
         if (s) {
           setStats({ totalCommits: s.totalCommits || 0, totalRepos: s.totalRepos || 0, workHours: s.workHours || 0 });
         }
-        // Update active repos
         const activeNames = new Set<string>();
-        const lines = (result.data.report || '').split('\n');
-        for (const line of lines) {
-          const m = line.match(/###\s*📁\s*(.+)/);
-          if (m) activeNames.add(m[1].trim());
+        if (result.data.commits?.length > 0) {
+          setCommits(result.data.commits);
+          for (const c of result.data.commits) {
+            activeNames.add(c.repo);
+          }
         }
         setActiveRepoNames(activeNames);
         setActiveSheet('commits');
-      } else {
-        setReport(`生成失败: ${result.error}`);
       }
-    } catch (error) {
-      setReport(`错误: ${error instanceof Error ? error.message : '未知错误'}`);
+    } catch {
+      // silently fail
     } finally {
       setIsGenerating(false);
     }
   };
+
+  // Filter commits by author when "only mine" is toggled (client-side)
+  const filteredCommits = useMemo(() => {
+    if (!onlyMine) return commits;
+    return commits.filter(c => c.author === 'zhangbing');
+  }, [commits, onlyMine]);
+
+  // Group commits by repo
+  const commitsByRepo = useMemo(() => {
+    const grouped: Record<string, CommitInfo[]> = {};
+    for (const c of filteredCommits) {
+      if (!grouped[c.repo]) grouped[c.repo] = [];
+      grouped[c.repo].push(c);
+    }
+    // Sort each group by date descending
+    for (const repo of Object.keys(grouped)) {
+      grouped[repo].sort((a, b) => b.date.localeCompare(a.date));
+    }
+    return grouped;
+  }, [filteredCommits]);
 
   return (
     <div className="h-full overflow-y-auto p-8">
@@ -275,15 +311,19 @@ export default function Dashboard() {
               <div className="flex items-center justify-between pr-6">
                 <SheetTitle className="flex items-center gap-2">
                   <Calendar size={18} />
-                  Commit Details ({stats.totalCommits} commits in {activeRepoNames.size} repos)
+                  Commit Details ({filteredCommits.length} commits in {Object.keys(commitsByRepo).length} repos)
                 </SheetTitle>
               </div>
               <SheetDescription>
                 Git commit details for the selected time range
               </SheetDescription>
             </SheetHeader>
-            <div className="mt-6">
-              <div className="flex justify-end mb-4">
+            <div className="mt-4">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Switch checked={onlyMine} onCheckedChange={setOnlyMine} />
+                  <span className="text-sm text-muted-foreground">只看我</span>
+                </div>
                 <Button
                   onClick={handleGenerateReport}
                   disabled={isGenerating}
@@ -293,13 +333,82 @@ export default function Dashboard() {
                   {isGenerating ? 'Generating...' : 'Regenerate'}
                 </Button>
               </div>
-              {report && (
-                <div className="rounded-lg p-4 overflow-x-auto bg-muted">
-                  <div className="markdown text-sm">
-                    {report.split('\n').map((line, index) => (
-                      <div key={index} className="mb-0.5">{line}</div>
-                    ))}
-                  </div>
+
+              {filteredCommits.length === 0 ? (
+                <div className="text-sm text-muted-foreground py-8 text-center">
+                  没有找到提交记录
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {Object.entries(commitsByRepo).map(([repo, repoCommits]) => (
+                    <div key={repo}>
+                      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <Folder size={14} className="text-muted-foreground" />
+                        {repo}
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
+                          {repoCommits.length}
+                        </Badge>
+                      </h3>
+                      <div className="space-y-2">
+                        {repoCommits.map((commit, i) => (
+                          <div
+                            key={i}
+                            className="rounded-lg border bg-card p-3 text-sm"
+                          >
+                            {/* Commit header */}
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <div className="font-medium text-foreground truncate">
+                                  {commit.message}
+                                </div>
+                                <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
+                                  <span className="font-mono">{commit.hash}</span>
+                                  <span className="flex items-center gap-1">
+                                    <User size={10} />
+                                    {commit.author}
+                                  </span>
+                                  <span>{commit.date.slice(0, 16)}</span>
+                                  {commit.branches && (
+                                    <span className="flex items-center gap-1">
+                                      <GitBranch size={10} />
+                                      {commit.branches}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              {(commit.additions > 0 || commit.deletions > 0) && (
+                                <div className="flex items-center gap-2 text-xs flex-shrink-0">
+                                  {commit.additions > 0 && (
+                                    <span className="flex items-center gap-0.5 text-green-600 dark:text-green-400">
+                                      <Plus size={10} />{commit.additions}
+                                    </span>
+                                  )}
+                                  {commit.deletions > 0 && (
+                                    <span className="flex items-center gap-0.5 text-red-600 dark:text-red-400">
+                                      <Minus size={10} />{commit.deletions}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Files changed */}
+                            {(commit.files_changed || []).length > 0 && (
+                              <div className="mt-2 pt-2 border-t">
+                                <div className="space-y-0.5">
+                                  {(commit.files_changed || []).map((file, fi) => (
+                                    <div key={fi} className="text-xs text-muted-foreground font-mono truncate">
+                                      {file}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

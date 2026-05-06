@@ -207,7 +207,7 @@ export class PluginManager extends EventEmitter {
       INCLUDE_ALL_BRANCHES: params.includeAllBranches !== false ? 'true' : 'false',
       DAILY_REPORT_TEMPLATE: reportTemplate,
       DAILY_REPORT_OUTPUT_DIR: outputDir,
-      DAILY_REPORT_OUTPUT_FORMAT: 'markdown'
+      DAILY_REPORT_OUTPUT_FORMAT: 'json'
     };
 
     const author = params.filterByAuthor as string | undefined;
@@ -228,33 +228,42 @@ export class PluginManager extends EventEmitter {
       };
     }
 
-    // Read report from file (most reliable)
-    const today = new Date().toISOString().split('T')[0];
-    const reportPath = path.join(outputDir, `daily-report-${today}.markdown`);
+    // Extract actual output file path from Python stdout
+    const stdout = result.stdout || '';
+    const outputMatch = stdout.match(/__OUTPUT_FILE__:(.+)/);
+    const reportPath = outputMatch ? outputMatch[1].trim() : '';
 
+    let commits: any[] = [];
+    let stats = { totalCommits: 0, totalRepos: 0, workHours: 0 };
     let reportContent = '';
-    try {
-      reportContent = await fs.readFile(reportPath, 'utf-8');
-    } catch {
-      // Fallback: extract report from stdout (between last pair of === lines)
-      const stdout = result.stdout || '';
+
+    if (reportPath && reportPath.endsWith('.json')) {
+      try {
+        const jsonStr = await fs.readFile(reportPath, 'utf-8');
+        const jsonData = JSON.parse(jsonStr);
+        commits = jsonData.commits || [];
+        stats = jsonData.stats || stats;
+      } catch {
+        // JSON file read failed, fall through to stdout fallback
+      }
+    }
+
+    // Fallback: extract stats from stdout if commits are empty
+    if (commits.length === 0) {
       const eqLines = [...stdout.matchAll(/^={10,}$/gm)].map(m => m.index!);
       if (eqLines.length >= 2) {
         reportContent = stdout.slice(eqLines[eqLines.length - 2], eqLines[eqLines.length - 1]).trim();
       } else {
         reportContent = stdout;
       }
-    }
-
-    // Extract structured stats from report
-    const stats = { totalCommits: 0, totalRepos: 0, workHours: 0 };
-    for (const line of reportContent.split('\n')) {
-      const cm = line.match(/提交总数:\s*(\d+)/);
-      if (cm) stats.totalCommits = parseInt(cm[1]);
-      const rm = line.match(/涉及仓库:\s*(\d+)/);
-      if (rm) stats.totalRepos = parseInt(rm[1]);
-      const hm = line.match(/工作时间:\s*([\d.]+)/);
-      if (hm) stats.workHours = parseFloat(hm[1]);
+      for (const line of reportContent.split('\n')) {
+        const cm = line.match(/提交总数:\s*(\d+)/);
+        if (cm) stats.totalCommits = parseInt(cm[1]);
+        const rm = line.match(/涉及仓库:\s*(\d+)/);
+        if (rm) stats.totalRepos = parseInt(rm[1]);
+        const hm = line.match(/工作时间:\s*([\d.]+)/);
+        if (hm) stats.workHours = parseFloat(hm[1]);
+      }
     }
 
     return {
@@ -262,7 +271,8 @@ export class PluginManager extends EventEmitter {
       data: {
         report: reportContent,
         reportPath,
-        stats
+        stats,
+        commits
       },
       logs: [result.stdout]
     };
