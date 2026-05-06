@@ -281,8 +281,21 @@ def generate_report(config=None):
     if config is None:
         config = CONFIG
 
-    # 获取时间范围
-    since, until = get_time_range(config.get("time_range", "today"))
+    # 获取时间范围（优先使用自定义日期）
+    since_date_cfg = config.get("since_date")
+    until_date_cfg = config.get("until_date")
+    if since_date_cfg:
+        print(f"📅 使用自定义日期范围: {since_date_cfg} ~ {until_date_cfg or '至今'}")
+        try:
+            since = datetime.strptime(since_date_cfg, "%Y-%m-%d").strftime("%Y-%m-%d 00:00:00")
+            until = None
+            if until_date_cfg:
+                until = datetime.strptime(until_date_cfg, "%Y-%m-%d").strftime("%Y-%m-%d 23:59:59")
+        except ValueError:
+            since, until = get_time_range(config.get("time_range", "today"))
+    else:
+        print(f"📅 使用预设时间范围: {config.get('time_range', 'today')}")
+        since, until = get_time_range(config.get("time_range", "today"))
 
     # 收集所有仓库路径
     repo_paths = []
@@ -440,6 +453,14 @@ def _config_from_env():
     fmt = os.environ.get("DAILY_REPORT_OUTPUT_FORMAT", "").strip().lower()
     if fmt in ("markdown", "txt", "json"):
         cfg["output_format"] = fmt
+
+    since = os.environ.get("SINCE_DATE", "").strip()
+    if since:
+        cfg["since_date"] = since
+
+    until = os.environ.get("UNTIL_DATE", "").strip()
+    if until:
+        cfg["until_date"] = until
 
     return cfg
 

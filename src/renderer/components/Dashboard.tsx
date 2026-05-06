@@ -1,11 +1,14 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Calendar, Clock, GitBranch, FileText, TrendingUp, Play, RefreshCw, Folder, Activity, User, Plus, Minus } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, GitBranch, FileText, TrendingUp, Play, RefreshCw, Folder, Activity, User, Plus, Minus } from 'lucide-react';
+import { format } from 'date-fns';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from './ui/sheet';
 import { Switch } from './ui/switch';
+import { Calendar } from './ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { cn } from '@/lib/utils';
 
 interface GitRepo {
@@ -28,7 +31,9 @@ interface CommitInfo {
 export default function Dashboard() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [commits, setCommits] = useState<CommitInfo[]>([]);
-  const [timeRange, setTimeRange] = useState<'today' | 'yesterday' | 'day_before_yesterday' | 'week'>('today');
+  const [timeRange, setTimeRange] = useState<string>('today');
+  const [customSince, setCustomSince] = useState<Date>();
+  const [customUntil, setCustomUntil] = useState<Date>();
   const [stats, setStats] = useState({
     totalCommits: 0,
     totalRepos: 0,
@@ -75,6 +80,19 @@ export default function Dashboard() {
     }
   }, [workPaths, loadGitRepos]);
 
+  const buildReportParams = useCallback(() => {
+    const params: any = {
+      timeRange: timeRange === 'custom' ? 'today' : timeRange,
+      includeAllBranches: true,
+    };
+    if (timeRange === 'custom') {
+      if (customSince) params.sinceDate = format(customSince, 'yyyy-MM-dd');
+      if (customUntil) params.untilDate = format(customUntil, 'yyyy-MM-dd');
+    }
+    console.log('[buildReportParams]', params);
+    return params;
+  }, [timeRange, customSince, customUntil]);
+
   const fetchStats = useCallback(async () => {
     setIsRefreshing(true);
     try {
@@ -90,9 +108,8 @@ export default function Dashboard() {
       }
 
       const result = await window.electronAPI.plugins.execute('daily-report', {
-        timeRange,
+        ...buildReportParams(),
         repoPaths,
-        includeAllBranches: true,
       });
 
       if (result.success) {
@@ -101,17 +118,11 @@ export default function Dashboard() {
           setStats({ totalCommits: s.totalCommits || 0, totalRepos: s.totalRepos || 0, workHours: s.workHours || 0 });
         }
         const activeNames = new Set<string>();
-        if (result.data.commits?.length > 0) {
-          setCommits(result.data.commits);
-          for (const c of result.data.commits) {
-            activeNames.add(c.repo);
-          }
-        } else {
-          const lines = (result.data.report || '').split('\n');
-          for (const line of lines) {
-            const m = line.match(/###\s*📁\s*(.+)/);
-            if (m) activeNames.add(m[1].trim());
-          }
+        const fetchedCommits = result.data.commits || [];
+        console.log('[fetchStats] commits count:', fetchedCommits.length);
+        setCommits(fetchedCommits);
+        for (const c of fetchedCommits) {
+          activeNames.add(c.repo);
         }
         setActiveRepoNames(activeNames);
       }
@@ -120,13 +131,13 @@ export default function Dashboard() {
     } finally {
       setIsRefreshing(false);
     }
-  }, [timeRange]);
+  }, [buildReportParams]);
 
   useEffect(() => {
     if (workPaths.length > 0) {
       fetchStats();
     }
-  }, [workPaths, timeRange, fetchStats]);
+  }, [workPaths, fetchStats]);
 
   const handleGenerateReport = async () => {
     setIsGenerating(true);
@@ -142,9 +153,8 @@ export default function Dashboard() {
       }
 
       const result = await window.electronAPI.plugins.execute('daily-report', {
-        timeRange,
+        ...buildReportParams(),
         repoPaths,
-        includeAllBranches: true,
         ...(onlyMine ? { filterByAuthor: 'zhangbing' } : {}),
       });
 
@@ -154,11 +164,10 @@ export default function Dashboard() {
           setStats({ totalCommits: s.totalCommits || 0, totalRepos: s.totalRepos || 0, workHours: s.workHours || 0 });
         }
         const activeNames = new Set<string>();
-        if (result.data.commits?.length > 0) {
-          setCommits(result.data.commits);
-          for (const c of result.data.commits) {
-            activeNames.add(c.repo);
-          }
+        const fetchedCommits = result.data.commits || [];
+        setCommits(fetchedCommits);
+        for (const c of fetchedCommits) {
+          activeNames.add(c.repo);
         }
         setActiveRepoNames(activeNames);
         setActiveSheet('commits');
@@ -200,7 +209,7 @@ export default function Dashboard() {
             <p className="text-muted-foreground">Welcome to 銘</p>
           </div>
           <div className="flex items-center gap-2">
-            <Select value={timeRange} onValueChange={(value) => setTimeRange(value as any)}>
+            <Select value={timeRange} onValueChange={setTimeRange}>
               <SelectTrigger className="w-32">
                 <SelectValue />
               </SelectTrigger>
@@ -209,8 +218,54 @@ export default function Dashboard() {
                 <SelectItem value="yesterday">昨天</SelectItem>
                 <SelectItem value="day_before_yesterday">前天</SelectItem>
                 <SelectItem value="week">This Week</SelectItem>
+                <SelectItem value="custom">自定义</SelectItem>
               </SelectContent>
             </Select>
+            {timeRange === 'custom' && (
+              <>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={cn('h-8 gap-1 text-xs', !customSince && 'text-muted-foreground')}
+                    >
+                      <CalendarIcon size={14} />
+                      {customSince ? format(customSince, 'MM/dd') : '开始'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={customSince}
+                      onSelect={setCustomSince}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+                <span className="text-xs text-muted-foreground">~</span>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={cn('h-8 gap-1 text-xs', !customUntil && 'text-muted-foreground')}
+                    >
+                      <CalendarIcon size={14} />
+                      {customUntil ? format(customUntil, 'MM/dd') : '结束'}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={customUntil}
+                      onSelect={setCustomUntil}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -310,7 +365,7 @@ export default function Dashboard() {
             <SheetHeader>
               <div className="flex items-center justify-between pr-6">
                 <SheetTitle className="flex items-center gap-2">
-                  <Calendar size={18} />
+                  <CalendarIcon size={18} />
                   Commit Details ({filteredCommits.length} commits in {Object.keys(commitsByRepo).length} repos)
                 </SheetTitle>
               </div>

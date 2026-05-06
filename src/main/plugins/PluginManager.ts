@@ -210,6 +210,10 @@ export class PluginManager extends EventEmitter {
       DAILY_REPORT_OUTPUT_FORMAT: 'json'
     };
 
+    // Custom date range
+    if (params.sinceDate) env.SINCE_DATE = params.sinceDate;
+    if (params.untilDate) env.UNTIL_DATE = params.untilDate;
+
     const author = params.filterByAuthor as string | undefined;
     if (author && String(author).trim()) {
       env.FILTER_BY_AUTHOR = String(author).trim();
