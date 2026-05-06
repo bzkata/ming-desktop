@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Calendar as CalendarIcon, Clock, GitBranch, FileText, TrendingUp, Play, RefreshCw, Folder, Activity, User, Plus, Minus } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, GitBranch, FileText, TrendingUp, Play, RefreshCw, Folder, Activity, User, Plus, Minus, Copy, Check } from 'lucide-react';
 import { format } from 'date-fns';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -21,6 +23,7 @@ interface CommitInfo {
   date: string;
   author: string;
   message: string;
+  description?: string;
   repo: string;
   files_changed: string[];
   additions: number;
@@ -42,9 +45,12 @@ export default function Dashboard() {
   const [workPaths, setWorkPaths] = useState<string[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [gitRepos, setGitRepos] = useState<GitRepo[]>([]);
-  const [activeSheet, setActiveSheet] = useState<'commits' | 'repos' | null>(null);
+  const [activeSheet, setActiveSheet] = useState<'commits' | 'repos' | 'report' | null>(null);
   const [activeRepoNames, setActiveRepoNames] = useState<Set<string>>(new Set());
   const [onlyMine, setOnlyMine] = useState(false);
+  const [reportContent, setReportContent] = useState('');
+  const [copiedHash, setCopiedHash] = useState<string | null>(null);
+  const [copiedReport, setCopiedReport] = useState(false);
 
   const loadWorkPaths = useCallback(async () => {
     try {
@@ -125,6 +131,9 @@ export default function Dashboard() {
           activeNames.add(c.repo);
         }
         setActiveRepoNames(activeNames);
+        if (result.data.report) {
+          setReportContent(result.data.report);
+        }
       }
     } catch {
       // silently fail
@@ -170,7 +179,10 @@ export default function Dashboard() {
           activeNames.add(c.repo);
         }
         setActiveRepoNames(activeNames);
-        setActiveSheet('commits');
+        if (result.data.report) {
+          setReportContent(result.data.report);
+        }
+        setActiveSheet(result.data.report ? 'report' : 'commits');
       }
     } catch {
       // silently fail
@@ -198,6 +210,21 @@ export default function Dashboard() {
     }
     return grouped;
   }, [filteredCommits]);
+
+  const copyToClipboard = useCallback(async (text: string, hash?: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      if (hash) {
+        setCopiedHash(hash);
+        setTimeout(() => setCopiedHash(null), 2000);
+      } else {
+        setCopiedReport(true);
+        setTimeout(() => setCopiedReport(false), 2000);
+      }
+    } catch {
+      // silently fail
+    }
+  }, []);
 
   return (
     <div className="h-full overflow-y-auto p-8">
@@ -359,6 +386,53 @@ export default function Dashboard() {
           </Card>
         </div>
 
+        {/* Daily Report Sheet */}
+        <Sheet open={activeSheet === 'report'} onOpenChange={(open) => !open && setActiveSheet(null)}>
+          <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
+            <SheetHeader>
+              <div className="flex items-center justify-between pr-6">
+                <SheetTitle className="flex items-center gap-2">
+                  <FileText size={18} />
+                  工作日报
+                </SheetTitle>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => copyToClipboard(reportContent)}
+                  >
+                    {copiedReport ? <Check size={14} /> : <Copy size={14} />}
+                    {copiedReport ? '已复制' : '复制'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleGenerateReport}
+                    disabled={isGenerating}
+                  >
+                    <Play size={14} />
+                    {isGenerating ? '生成中...' : '重新生成'}
+                  </Button>
+                </div>
+              </div>
+              <SheetDescription>
+                {format(new Date(), 'yyyy年MM月dd日')}
+              </SheetDescription>
+            </SheetHeader>
+            <div className="mt-4 prose prose-sm dark:prose-invert max-w-none">
+              {reportContent ? (
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {reportContent}
+                </ReactMarkdown>
+              ) : (
+                <div className="text-sm text-muted-foreground py-8 text-center">
+                  暂无日报内容，点击「重新生成」
+                </div>
+              )}
+            </div>
+          </SheetContent>
+        </Sheet>
+
         {/* Commit Detail Sheet */}
         <Sheet open={activeSheet === 'commits'} onOpenChange={(open) => !open && setActiveSheet(null)}>
           <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
@@ -417,12 +491,22 @@ export default function Dashboard() {
                                   {commit.message}
                                 </div>
                                 <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
-                                  <span className="font-mono">{commit.hash}</span>
+                                  <button
+                                    className="font-mono hover:text-foreground transition-colors flex items-center gap-1"
+                                    onClick={() => copyToClipboard(commit.hash, commit.hash)}
+                                    title={copiedHash === commit.hash ? '已复制' : '点击复制完整 hash'}
+                                  >
+                                    {commit.hash.slice(0, 7)}
+                                    {copiedHash === commit.hash
+                                      ? <Check size={10} className="text-green-500" />
+                                      : <Copy size={10} />
+                                    }
+                                  </button>
                                   <span className="flex items-center gap-1">
                                     <User size={10} />
                                     {commit.author}
                                   </span>
-                                  <span>{commit.date.slice(0, 16)}</span>
+                                  <span title={commit.date}>{commit.date.slice(0, 19)}</span>
                                   {commit.branches && (
                                     <span className="flex items-center gap-1">
                                       <GitBranch size={10} />
@@ -430,6 +514,13 @@ export default function Dashboard() {
                                     </span>
                                   )}
                                 </div>
+                                {commit.description && commit.description.trim() && (
+                                  <div className="mt-1.5 text-xs text-muted-foreground/80 border-l-2 border-border pl-2">
+                                    {commit.description.trim().split('\n').map((line, li) => (
+                                      <span key={li}>{line}<br /></span>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                               {(commit.additions > 0 || commit.deletions > 0) && (
                                 <div className="flex items-center gap-2 text-xs flex-shrink-0">
@@ -547,13 +638,24 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <Button
-                onClick={handleGenerateReport}
-                disabled={isGenerating}
-              >
-                <Play size={18} />
-                {isGenerating ? 'Generating...' : 'Generate'}
-              </Button>
+              <div className="flex items-center gap-2">
+                {reportContent && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setActiveSheet('report')}
+                  >
+                    <FileText size={16} />
+                    查看日报
+                  </Button>
+                )}
+                <Button
+                  onClick={handleGenerateReport}
+                  disabled={isGenerating}
+                >
+                  <Play size={18} />
+                  {isGenerating ? 'Generating...' : 'Generate'}
+                </Button>
+              </div>
             </div>
           </CardHeader>
         </Card>

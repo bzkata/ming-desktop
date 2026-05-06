@@ -247,6 +247,7 @@ export class PluginManager extends EventEmitter {
         const jsonData = JSON.parse(jsonStr);
         commits = jsonData.commits || [];
         stats = jsonData.stats || stats;
+        reportContent = jsonData.report || '';
       } catch {
         // JSON file read failed, fall through to stdout fallback
       }

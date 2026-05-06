@@ -398,6 +398,7 @@ def save_report(report, config=None, commits=None):
         filename = f"daily-report-{today}.json"
         filepath = output_dir / filename
         data = {
+            "report": report,
             "commits": commits,
             "stats": {
                 "totalCommits": len(commits),
