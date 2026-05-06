@@ -24,6 +24,8 @@ import {
 const PROVIDER_TYPES: { value: LLMProvider['type']; label: string }[] = [
   { value: 'openai', label: 'OpenAI' },
   { value: 'anthropic', label: 'Anthropic' },
+  { value: 'qwen', label: 'Qwen (通义千问)' },
+  { value: 'deepseek', label: 'DeepSeek' },
   { value: 'custom', label: 'OpenAI-compatible' },
 ];
 
@@ -360,7 +362,11 @@ export default function LLMConfiguration() {
                 placeholder={
                   addForm.type === 'anthropic'
                     ? 'https://api.anthropic.com'
-                    : 'https://api.openai.com/v1'
+                    : addForm.type === 'qwen'
+                      ? 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+                      : addForm.type === 'deepseek'
+                        ? 'https://api.deepseek.com/v1'
+                        : 'https://api.openai.com/v1'
                 }
               />
             </div>

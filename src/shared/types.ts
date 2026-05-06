@@ -54,7 +54,7 @@ export interface ChatMessage {
 export interface LLMProvider {
   id: string;
   name: string;
-  type: 'openai' | 'anthropic' | 'local' | 'custom';
+  type: 'openai' | 'anthropic' | 'local' | 'custom' | 'qwen' | 'deepseek';
   apiKey?: string;
   baseURL?: string;
   models: string[];

@@ -45,10 +45,15 @@ export class LLMProviderManager extends EventEmitter {
     try {
       let client: OpenAI | Anthropic;
 
-      if (provider.type === 'openai' || provider.type === 'custom') {
+      if (provider.type === 'openai' || provider.type === 'custom' || provider.type === 'qwen' || provider.type === 'deepseek') {
+        const defaultBaseURL = provider.type === 'qwen'
+          ? 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+          : provider.type === 'deepseek'
+            ? 'https://api.deepseek.com/v1'
+            : 'https://api.openai.com/v1';
         client = new OpenAI({
           apiKey: provider.apiKey,
-          baseURL: provider.baseURL || 'https://api.openai.com/v1'
+          baseURL: provider.baseURL || defaultBaseURL
         });
       } else if (provider.type === 'anthropic') {
         client = new Anthropic({
@@ -171,7 +176,7 @@ export class LLMProviderManager extends EventEmitter {
     }
 
     try {
-      if (provider.type === 'openai' || provider.type === 'custom') {
+      if (provider.type === 'openai' || provider.type === 'custom' || provider.type === 'qwen' || provider.type === 'deepseek') {
         return await this.chatWithOpenAI(client as OpenAI, provider, messages);
       } else if (provider.type === 'anthropic') {
         return await this.chatWithAnthropic(client as Anthropic, provider, messages);
@@ -230,6 +235,10 @@ export class LLMProviderManager extends EventEmitter {
         return ['claude-3-opus-20240229', 'claude-3-sonnet-20240229', 'claude-3-haiku-20240307'];
       case 'custom':
         return ['gpt-4', 'gpt-3.5-turbo'];
+      case 'qwen':
+        return ['qwen-turbo', 'qwen-plus', 'qwen-max'];
+      case 'deepseek':
+        return ['deepseek-chat', 'deepseek-coder'];
       case 'local':
         return ['llama-2-7b', 'mistral-7b'];
       default:

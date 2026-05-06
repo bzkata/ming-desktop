@@ -36,7 +36,7 @@ export function runMigrations(): void {
     CREATE TABLE IF NOT EXISTS llm_providers (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      type TEXT NOT NULL CHECK(type IN ('openai','anthropic','local','custom')),
+      type TEXT NOT NULL CHECK(type IN ('openai','anthropic','local','custom','qwen','deepseek')),
       api_key TEXT,
       base_url TEXT,
       models TEXT DEFAULT '[]',
@@ -58,4 +58,27 @@ export function runMigrations(): void {
     "INSERT OR IGNORE INTO _migrations (name) VALUES ('initial-schema')"
   );
   insertMigration.run();
+
+  // Migration: expand llm_providers CHECK constraint to include qwen/deepseek
+  const migrationName = 'add-qwen-deepseek-provider-types';
+  const applied = db.prepare('SELECT 1 FROM _migrations WHERE name = ?').get(migrationName);
+  if (!applied) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS llm_providers_new (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL CHECK(type IN ('openai','anthropic','local','custom','qwen','deepseek')),
+        api_key TEXT,
+        base_url TEXT,
+        models TEXT DEFAULT '[]',
+        enabled INTEGER DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO llm_providers_new SELECT * FROM llm_providers;
+      DROP TABLE llm_providers;
+      ALTER TABLE llm_providers_new RENAME TO llm_providers;
+    `);
+    db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(migrationName);
+  }
 }
