@@ -284,7 +284,7 @@ export class LLMProviderManager extends EventEmitter {
     let usage: any = undefined;
 
     for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta;
+      const delta = chunk.choices?.[0]?.delta;
 
       // Handle reasoning_content (DeepSeek/Qwen)
       const reasoning = (delta as any)?.reasoning_content;
@@ -359,7 +359,9 @@ export class LLMProviderManager extends EventEmitter {
 
     // Handle thinking events (extended thinking)
     stream.on('thinking', (thinking: string) => {
-      thinkingContent += thinking;
+      if (typeof thinking === 'string') {
+        thinkingContent += thinking;
+      }
     });
 
     const finalMessage = await stream.finalMessage();
