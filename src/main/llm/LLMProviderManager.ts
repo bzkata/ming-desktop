@@ -192,6 +192,194 @@ export class LLMProviderManager extends EventEmitter {
     }
   }
 
+  async chatStream(
+    providerId: string,
+    messages: ChatMessage[],
+    model: string | undefined,
+    onChunk: (text: string) => void,
+    onDebug: (event: import('../../shared/types').DebugModelCall) => void
+  ): Promise<{ fullContent: string; usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number } }> {
+    const provider = this.providers.get(providerId);
+    if (!provider) {
+      throw new Error(`Provider not found: ${providerId}`);
+    }
+
+    const client = this.clients.get(providerId);
+    if (!client) {
+      throw new Error(`Provider client not initialized: ${providerId}`);
+    }
+
+    const resolvedModel = model || provider.models[0] || 'gpt-4';
+
+    onDebug({
+      type: 'request',
+      timestamp: Date.now(),
+      data: {
+        provider: provider.name,
+        model: resolvedModel,
+        messages: messages.map(m => ({ role: m.role, content: m.content })),
+      },
+    });
+
+    const startTime = Date.now();
+
+    try {
+      let result: { fullContent: string; usage?: any };
+
+      if (provider.type === 'openai' || provider.type === 'custom' || provider.type === 'qwen' || provider.type === 'deepseek') {
+        result = await this.chatStreamOpenAI(client as OpenAI, provider, messages, resolvedModel, onChunk, onDebug);
+      } else if (provider.type === 'anthropic') {
+        result = await this.chatStreamAnthropic(client as Anthropic, provider, messages, resolvedModel, onChunk, onDebug);
+      } else {
+        throw new Error(`Unsupported provider type: ${provider.type}`);
+      }
+
+      onDebug({
+        type: 'response',
+        timestamp: Date.now(),
+        data: {
+          provider: provider.name,
+          model: resolvedModel,
+          content: result.fullContent.slice(0, 200) + (result.fullContent.length > 200 ? '...' : ''),
+          usage: result.usage,
+          duration: Date.now() - startTime,
+        },
+      });
+
+      return result;
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      onDebug({
+        type: 'error',
+        timestamp: Date.now(),
+        data: {
+          provider: provider.name,
+          model: resolvedModel,
+          error: errorMsg,
+          duration: Date.now() - startTime,
+        },
+      });
+      throw error;
+    }
+  }
+
+  private async chatStreamOpenAI(
+    client: OpenAI,
+    provider: LLMProvider,
+    messages: ChatMessage[],
+    model: string,
+    onChunk: (text: string) => void,
+    onDebug: (event: import('../../shared/types').DebugModelCall) => void
+  ): Promise<{ fullContent: string; usage?: any }> {
+    const stream = await client.chat.completions.create({
+      model,
+      messages: messages.map(m => ({ role: m.role, content: m.content })),
+      temperature: 0.7,
+      max_tokens: 2048,
+      stream: true,
+    });
+
+    let fullContent = '';
+    let reasoningContent = '';
+    let usage: any = undefined;
+
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta;
+
+      // Handle reasoning_content (DeepSeek/Qwen)
+      const reasoning = (delta as any)?.reasoning_content;
+      if (reasoning) {
+        reasoningContent += reasoning;
+      }
+
+      if (delta?.content) {
+        fullContent += delta.content;
+        onChunk(delta.content);
+      }
+
+      // Debug: log each chunk
+      onDebug({
+        type: 'chunk',
+        timestamp: Date.now(),
+        data: {
+          content: delta?.content || '',
+          provider: provider.name,
+          model,
+        },
+      });
+
+      // Capture usage from final chunk (some providers include it)
+      if ((chunk as any).usage) {
+        usage = {
+          promptTokens: (chunk as any).usage.prompt_tokens,
+          completionTokens: (chunk as any).usage.completion_tokens,
+          totalTokens: (chunk as any).usage.total_tokens,
+        };
+      }
+    }
+
+    // Prepend reasoning content if present
+    if (reasoningContent) {
+      const prefix = `<think>${reasoningContent}</think>\n`;
+      fullContent = prefix + fullContent;
+    }
+
+    return { fullContent, usage };
+  }
+
+  private async chatStreamAnthropic(
+    client: Anthropic,
+    provider: LLMProvider,
+    messages: ChatMessage[],
+    model: string,
+    onChunk: (text: string) => void,
+    onDebug: (event: import('../../shared/types').DebugModelCall) => void
+  ): Promise<{ fullContent: string; usage?: any }> {
+    const stream = client.messages.stream({
+      model,
+      max_tokens: 2048,
+      messages: messages
+        .filter(m => m.role !== 'system')
+        .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+      system: messages.find(m => m.role === 'system')?.content || '',
+    });
+
+    let fullContent = '';
+    let thinkingContent = '';
+
+    stream.on('text', (text: string) => {
+      fullContent += text;
+      onChunk(text);
+      onDebug({
+        type: 'chunk',
+        timestamp: Date.now(),
+        data: { content: text, provider: provider.name, model },
+      });
+    });
+
+    // Handle thinking events (extended thinking)
+    stream.on('thinking', (thinking: string) => {
+      thinkingContent += thinking;
+    });
+
+    const finalMessage = await stream.finalMessage();
+
+    // Extract usage
+    const usage = finalMessage.usage ? {
+      promptTokens: finalMessage.usage.input_tokens,
+      completionTokens: finalMessage.usage.output_tokens,
+      totalTokens: finalMessage.usage.input_tokens + finalMessage.usage.output_tokens,
+    } : undefined;
+
+    // Prepend thinking if present
+    if (thinkingContent) {
+      const prefix = `<think>${thinkingContent}</think>\n`;
+      fullContent = prefix + fullContent;
+    }
+
+    return { fullContent, usage };
+  }
+
   private async chatWithOpenAI(
     client: OpenAI,
     provider: LLMProvider,
