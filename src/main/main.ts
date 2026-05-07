@@ -125,8 +125,9 @@ function setupIPCHandlers(): void {
     return agentManager.renameConversation(conversationId, title);
   });
 
-  ipcMain.handle(IPCChannels.CONVERSATION_CHAT, async (_, conversationId: string, agentId: string, message: string, model?: string) => {
-    return agentManager.chatInConversation(conversationId, agentId, message, model);
+  ipcMain.on(IPCChannels.CONVERSATION_CHAT, (event, conversationId: string, agentId: string, message: string, model?: string) => {
+    const webContents = event.sender;
+    agentManager.chatInConversationStream(conversationId, agentId, message, model, webContents);
   });
 
   // LLM Provider 相关

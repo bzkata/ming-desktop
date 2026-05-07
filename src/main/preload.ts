@@ -28,8 +28,35 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke(IPCChannels.CONVERSATION_DELETE, conversationId),
     rename: (conversationId: string, title: string) =>
       ipcRenderer.invoke(IPCChannels.CONVERSATION_RENAME, conversationId, title),
-    chat: (conversationId: string, agentId: string, message: string, model?: string) =>
-      ipcRenderer.invoke(IPCChannels.CONVERSATION_CHAT, conversationId, agentId, message, model),
+    // Changed: fire-and-forget, response comes via stream events
+    chat: (conversationId: string, agentId: string, message: string, model?: string) => {
+      ipcRenderer.send(IPCChannels.CONVERSATION_CHAT, conversationId, agentId, message, model);
+    },
+    // Streaming listeners — each returns an unsubscribe function
+    onStreamChunk: (callback: (data: any) => void) => {
+      const listener = (_event: any, data: any) => callback(data);
+      ipcRenderer.on(IPCChannels.CONVERSATION_STREAM_CHUNK, listener);
+      return () => ipcRenderer.removeListener(IPCChannels.CONVERSATION_STREAM_CHUNK, listener);
+    },
+    onStreamEnd: (callback: (data: any) => void) => {
+      const listener = (_event: any, data: any) => callback(data);
+      ipcRenderer.on(IPCChannels.CONVERSATION_STREAM_END, listener);
+      return () => ipcRenderer.removeListener(IPCChannels.CONVERSATION_STREAM_END, listener);
+    },
+    onStreamError: (callback: (data: any) => void) => {
+      const listener = (_event: any, data: any) => callback(data);
+      ipcRenderer.on(IPCChannels.CONVERSATION_STREAM_ERROR, listener);
+      return () => ipcRenderer.removeListener(IPCChannels.CONVERSATION_STREAM_ERROR, listener);
+    },
+  },
+
+  // Debug API
+  debug: {
+    onModelCall: (callback: (data: any) => void) => {
+      const listener = (_event: any, data: any) => callback(data);
+      ipcRenderer.on(IPCChannels.DEBUG_MODEL_CALL, listener);
+      return () => ipcRenderer.removeListener(IPCChannels.DEBUG_MODEL_CALL, listener);
+    },
   },
 
   // LLM API
@@ -90,7 +117,10 @@ export interface ElectronAPI {
     messages: (conversationId: string) => Promise<any[]>;
     delete: (conversationId: string) => Promise<void>;
     rename: (conversationId: string, title: string) => Promise<void>;
-    chat: (conversationId: string, agentId: string, message: string, model?: string) => Promise<string>;
+    chat: (conversationId: string, agentId: string, message: string, model?: string) => void;
+    onStreamChunk: (callback: (data: any) => void) => () => void;
+    onStreamEnd: (callback: (data: any) => void) => () => void;
+    onStreamError: (callback: (data: any) => void) => () => void;
   };
   llm: {
     listProviders: () => Promise<any[]>;
@@ -111,5 +141,8 @@ export interface ElectronAPI {
   };
   dialog: {
     showOpenDialog: (options: Electron.OpenDialogOptions) => Promise<Electron.OpenDialogReturnValue>;
+  };
+  debug: {
+    onModelCall: (callback: (data: any) => void) => () => void;
   };
 }
