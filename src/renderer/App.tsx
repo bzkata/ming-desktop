@@ -22,6 +22,7 @@ interface ElectronAPI {
     addProvider: (config: any) => Promise<any>;
     removeProvider: (providerId: string) => Promise<void>;
     updateProvider: (providerId: string, updates: any) => Promise<void>;
+    fetchModels: (providerId: string) => Promise<string[]>;
   };
   executor: {
     executeCommand: (command: string, options?: any) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
@@ -44,7 +45,7 @@ interface ElectronAPI {
     messages: (conversationId: string) => Promise<any[]>;
     delete: (conversationId: string) => Promise<void>;
     rename: (conversationId: string, title: string) => Promise<void>;
-    chat: (conversationId: string, agentId: string, message: string) => Promise<string>;
+    chat: (conversationId: string, agentId: string, message: string, model?: string) => Promise<string>;
   };
 }
 

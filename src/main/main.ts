@@ -125,8 +125,8 @@ function setupIPCHandlers(): void {
     return agentManager.renameConversation(conversationId, title);
   });
 
-  ipcMain.handle(IPCChannels.CONVERSATION_CHAT, async (_, conversationId: string, agentId: string, message: string) => {
-    return agentManager.chatInConversation(conversationId, agentId, message);
+  ipcMain.handle(IPCChannels.CONVERSATION_CHAT, async (_, conversationId: string, agentId: string, message: string, model?: string) => {
+    return agentManager.chatInConversation(conversationId, agentId, message, model);
   });
 
   // LLM Provider 相关
@@ -148,6 +148,10 @@ function setupIPCHandlers(): void {
 
   ipcMain.handle(IPCChannels.LLM_UPDATE_PROVIDER, async (_, providerId: string, updates: any) => {
     return llmManager.updateProvider(providerId, updates);
+  });
+
+  ipcMain.handle(IPCChannels.LLM_FETCH_MODELS, async (_, providerId: string) => {
+    return llmManager.fetchModels(providerId);
   });
 
   // 执行服务相关

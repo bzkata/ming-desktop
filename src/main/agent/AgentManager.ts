@@ -298,7 +298,7 @@ You have access to:
     db.prepare("UPDATE conversations SET title = ?, updated_at = datetime('now') WHERE id = ?").run(title, conversationId);
   }
 
-  async chatInConversation(conversationId: string, agentId: string, userMessage: string): Promise<string> {
+  async chatInConversation(conversationId: string, agentId: string, userMessage: string, model?: string): Promise<string> {
     const agent = this.agents.get(agentId);
     if (!agent) {
       throw new Error(`Agent not found: ${agentId}`);
@@ -349,7 +349,7 @@ You have access to:
         throw new Error('No LLM providers configured');
       }
 
-      const response = await this.llmManager.chat(providerId, messages);
+      const response = await this.llmManager.chat(providerId, messages, model);
 
       // Save assistant response
       db.prepare(`

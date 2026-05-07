@@ -28,8 +28,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke(IPCChannels.CONVERSATION_DELETE, conversationId),
     rename: (conversationId: string, title: string) =>
       ipcRenderer.invoke(IPCChannels.CONVERSATION_RENAME, conversationId, title),
-    chat: (conversationId: string, agentId: string, message: string) =>
-      ipcRenderer.invoke(IPCChannels.CONVERSATION_CHAT, conversationId, agentId, message),
+    chat: (conversationId: string, agentId: string, message: string, model?: string) =>
+      ipcRenderer.invoke(IPCChannels.CONVERSATION_CHAT, conversationId, agentId, message, model),
   },
 
   // LLM API
@@ -42,6 +42,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke(IPCChannels.LLM_REMOVE_PROVIDER, providerId),
     updateProvider: (providerId: string, updates: any) =>
       ipcRenderer.invoke(IPCChannels.LLM_UPDATE_PROVIDER, providerId, updates),
+    fetchModels: (providerId: string) =>
+      ipcRenderer.invoke(IPCChannels.LLM_FETCH_MODELS, providerId),
   },
 
   // 执行 API
@@ -88,7 +90,7 @@ export interface ElectronAPI {
     messages: (conversationId: string) => Promise<any[]>;
     delete: (conversationId: string) => Promise<void>;
     rename: (conversationId: string, title: string) => Promise<void>;
-    chat: (conversationId: string, agentId: string, message: string) => Promise<string>;
+    chat: (conversationId: string, agentId: string, message: string, model?: string) => Promise<string>;
   };
   llm: {
     listProviders: () => Promise<any[]>;
@@ -96,6 +98,7 @@ export interface ElectronAPI {
     addProvider: (config: any) => Promise<any>;
     removeProvider: (providerId: string) => Promise<void>;
     updateProvider: (providerId: string, updates: any) => Promise<void>;
+    fetchModels: (providerId: string) => Promise<string[]>;
   };
   executor: {
     executeCommand: (command: string, options?: any) => Promise<{ stdout: string; stderr: string; exitCode: number }>;

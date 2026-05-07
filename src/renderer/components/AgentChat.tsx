@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Send, Bot, User, Plus, Trash2, MessageSquare, Pencil, ChevronDown } from 'lucide-react';
+import { Send, Bot, User, Plus, Trash2, MessageSquare, Pencil, ChevronDown, Cpu } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import hljs from 'highlight.js';
@@ -43,11 +43,33 @@ interface Message {
   timestamp?: string;
 }
 
-/** Parse <think&gt;...&lt;/think&gt; blocks from text, returning thinking content and the rest */
+interface LLMProvider {
+  id: string;
+  name: string;
+  type: string;
+  models: string[];
+  enabledModels: string[];
+  enabled: boolean;
+}
+
+/** Parse thinking blocks from text, returning thinking content and the rest */
 function parseThinking(text: string): { thinking: string | null; content: string } {
-  const match = text.match(/^<think\s*>([\s\S]*?)<\/think>\s*\n?/);
-  if (!match) return { thinking: null, content: text };
-  return { thinking: match[1].trim(), content: text.slice(match[0].length) };
+  // Match both `<think></think>` (DeepSeek) and `<think></think>` (Qwen) patterns
+  const thinkOpenTags = ['<think>'];
+  const thinkCloseTags = ['</think>'];
+
+  for (let i = 0; i < thinkOpenTags.length; i++) {
+    const open = thinkOpenTags[i];
+    const close = thinkCloseTags[i];
+    const startIdx = text.indexOf(open);
+    if (startIdx === -1) continue;
+    const endIdx = text.indexOf(close, startIdx + open.length);
+    if (endIdx === -1) continue;
+    const thinking = text.slice(startIdx + open.length, endIdx).trim();
+    const after = text.slice(endIdx + close.length).trim();
+    return { thinking, content: after };
+  }
+  return { thinking: null, content: text };
 }
 
 /** Single message bubble — extracted so we can memo the thinking parse */
@@ -124,11 +146,14 @@ export default function AgentChat() {
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [providers, setProviders] = useState<LLMProvider[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadAgents();
     loadConversations();
+    loadProviders();
   }, []);
 
   useEffect(() => {
@@ -144,6 +169,23 @@ export default function AgentChat() {
       }
     } catch (error) {
       console.error('Failed to load agents:', error);
+    }
+  };
+
+  const loadProviders = async () => {
+    try {
+      const result = await window.electronAPI.llm.listProviders();
+      const enabledProviders = result.filter((p: LLMProvider) => p.enabled);
+      setProviders(enabledProviders);
+      // Set default model to first enabled provider's first enabled model
+      if (enabledProviders.length > 0 && !selectedModel) {
+        const firstEnabled = enabledProviders.find(p => (p.enabledModels || []).length > 0);
+        if (firstEnabled) {
+          setSelectedModel(firstEnabled.enabledModels[0]);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load providers:', error);
     }
   };
 
@@ -237,7 +279,7 @@ export default function AgentChat() {
     setIsLoading(true);
 
     try {
-      const response = await window.electronAPI.conversations.chat(convId!, selectedAgentId, input);
+      const response = await window.electronAPI.conversations.chat(convId!, selectedAgentId, input, selectedModel || undefined);
       const assistantMessage: Message = {
         role: 'assistant',
         content: response,
@@ -349,6 +391,24 @@ export default function AgentChat() {
               )}
             </div>
             <div className="flex items-center gap-2">
+              {selectedModel && (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted text-xs text-muted-foreground">
+                  <Cpu size={12} />
+                  <select
+                    value={selectedModel}
+                    onChange={(e) => setSelectedModel(e.target.value)}
+                    className="bg-transparent border-none text-xs text-muted-foreground cursor-pointer focus:outline-none"
+                  >
+                    {providers.map((provider) =>
+                      (provider.enabledModels || []).map((model) => (
+                        <option key={`${provider.id}-${model}`} value={model}>
+                          {model}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+              )}
               <select
                 value={selectedAgentId || ''}
                 onChange={(e) => setSelectedAgentId(e.target.value)}
@@ -409,7 +469,7 @@ export default function AgentChat() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyPress={handleKeyPress}
-                  placeholder={`Message ${selectedAgent?.name || 'agent'}...`}
+                  placeholder={`Message ${selectedAgent?.name || 'agent'}${selectedModel ? ` (${selectedModel})` : ''}...`}
                   disabled={isLoading}
                   className="flex-1"
                 />

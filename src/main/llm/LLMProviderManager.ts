@@ -30,6 +30,7 @@ export class LLMProviderManager extends EventEmitter {
         apiKey: row.api_key,
         baseURL: row.base_url,
         models: JSON.parse(row.models || '[]'),
+        enabledModels: JSON.parse(row.enabled_models || '[]'),
         enabled: !!row.enabled
       };
       this.providers.set(provider.id, provider);
@@ -85,13 +86,15 @@ export class LLMProviderManager extends EventEmitter {
   }
 
   async addProvider(config: LLMProviderConfig): Promise<LLMProvider> {
+    const defaultModels = config.models?.length
+      ? config.models
+      : this.getDefaultModels(config.type);
     const provider: LLMProvider = {
       id: `provider-${randomUUID().slice(0, 8)}`,
       ...config,
       enabled: true,
-      models: config.models?.length
-        ? config.models
-        : this.getDefaultModels(config.type)
+      models: defaultModels,
+      enabledModels: defaultModels, // all default models enabled by default
     };
 
     this.providers.set(provider.id, provider);
@@ -103,9 +106,9 @@ export class LLMProviderManager extends EventEmitter {
     // Save to SQLite
     const db = getDatabase();
     db.prepare(`
-      INSERT INTO llm_providers (id, name, type, api_key, base_url, models, enabled)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(provider.id, provider.name, provider.type, provider.apiKey || null, provider.baseURL || null, JSON.stringify(provider.models), 1);
+      INSERT INTO llm_providers (id, name, type, api_key, base_url, models, enabled, enabled_models)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(provider.id, provider.name, provider.type, provider.apiKey || null, provider.baseURL || null, JSON.stringify(provider.models), 1, JSON.stringify(provider.enabledModels));
 
     this.emit('provider-added', provider);
     Logger.info(`LLM provider added: ${provider.name}`);
@@ -155,16 +158,16 @@ export class LLMProviderManager extends EventEmitter {
       const db = getDatabase();
       db.prepare(`
         UPDATE llm_providers
-        SET name = ?, type = ?, api_key = ?, base_url = ?, models = ?, enabled = ?, updated_at = datetime('now')
+        SET name = ?, type = ?, api_key = ?, base_url = ?, models = ?, enabled = ?, enabled_models = ?, updated_at = datetime('now')
         WHERE id = ?
-      `).run(updated.name, updated.type, updated.apiKey || null, updated.baseURL || null, JSON.stringify(updated.models), updated.enabled ? 1 : 0, providerId);
+      `).run(updated.name, updated.type, updated.apiKey || null, updated.baseURL || null, JSON.stringify(updated.models), updated.enabled ? 1 : 0, JSON.stringify(updated.enabledModels), providerId);
 
       this.emit('provider-updated', updated);
       Logger.info(`LLM provider updated: ${updated.name}`);
     }
   }
 
-  async chat(providerId: string, messages: ChatMessage[]): Promise<string> {
+  async chat(providerId: string, messages: ChatMessage[], model?: string): Promise<string> {
     const provider = this.providers.get(providerId);
     if (!provider) {
       throw new Error(`Provider not found: ${providerId}`);
@@ -177,9 +180,9 @@ export class LLMProviderManager extends EventEmitter {
 
     try {
       if (provider.type === 'openai' || provider.type === 'custom' || provider.type === 'qwen' || provider.type === 'deepseek') {
-        return await this.chatWithOpenAI(client as OpenAI, provider, messages);
+        return await this.chatWithOpenAI(client as OpenAI, provider, messages, model);
       } else if (provider.type === 'anthropic') {
-        return await this.chatWithAnthropic(client as Anthropic, provider, messages);
+        return await this.chatWithAnthropic(client as Anthropic, provider, messages, model);
       } else {
         throw new Error(`Unsupported provider type: ${provider.type}`);
       }
@@ -192,10 +195,11 @@ export class LLMProviderManager extends EventEmitter {
   private async chatWithOpenAI(
     client: OpenAI,
     provider: LLMProvider,
-    messages: ChatMessage[]
+    messages: ChatMessage[],
+    model?: string
   ): Promise<string> {
     const response = await client.chat.completions.create({
-      model: provider.models[0] || 'gpt-4',
+      model: model || provider.models[0] || 'gpt-4',
       messages: messages.map(m => ({
         role: m.role,
         content: m.content
@@ -204,16 +208,24 @@ export class LLMProviderManager extends EventEmitter {
       max_tokens: 2048
     });
 
-    return response.choices[0]?.message?.content || '';
+    const msg = response.choices[0]?.message;
+    const content = msg?.content || '';
+    // Some providers (DeepSeek, Qwen) return reasoning in a separate field
+    const reasoning = (msg as any)?.reasoning_content;
+    if (reasoning) {
+      return `<think>${reasoning}</think>\n${content}`;
+    }
+    return content;
   }
 
   private async chatWithAnthropic(
     client: Anthropic,
     provider: LLMProvider,
-    messages: ChatMessage[]
+    messages: ChatMessage[],
+    model?: string
   ): Promise<string> {
     const response = await client.messages.create({
-      model: provider.models[0] || 'claude-3-opus-20240229',
+      model: model || provider.models[0] || 'claude-3-opus-20240229',
       max_tokens: 2048,
       messages: messages
         .filter(m => m.role !== 'system')
@@ -224,7 +236,15 @@ export class LLMProviderManager extends EventEmitter {
       system: messages.find(m => m.role === 'system')?.content || ''
     });
 
-    return response.content[0]?.type === 'text' ? response.content[0].text : '';
+    // Check for thinking blocks (Anthropic extended thinking)
+    const parts = response.content as Array<{ type: string; text?: string; thinking?: string }>;
+    const thinkingText = parts.filter(b => b.type === 'thinking').map(b => b.thinking || b.text || '').join('\n');
+    const textParts = parts.filter(b => b.type === 'text').map(b => b.text || '');
+    const mainText = textParts.join('\n');
+    if (thinkingText) {
+      return `<think>${thinkingText}</think>\n${mainText}`;
+    }
+    return mainText;
   }
 
   private getDefaultModels(type: LLMProvider['type']): string[] {
@@ -243,6 +263,44 @@ export class LLMProviderManager extends EventEmitter {
         return ['llama-2-7b', 'mistral-7b'];
       default:
         return ['gpt-4'];
+    }
+  }
+
+  async fetchModels(providerId: string): Promise<string[]> {
+    const provider = this.providers.get(providerId);
+    if (!provider) {
+      throw new Error(`Provider not found: ${providerId}`);
+    }
+
+    const client = this.clients.get(providerId);
+    if (!client) {
+      throw new Error(`Provider client not initialized: ${providerId}`);
+    }
+
+    try {
+      if (provider.type === 'anthropic') {
+        // Anthropic has no public models endpoint; return defaults
+        return this.getDefaultModels('anthropic');
+      }
+
+      // OpenAI-compatible: call /models endpoint
+      const openaiClient = client as OpenAI;
+      const response = await openaiClient.models.list();
+      const modelIds = response.data
+        .map(m => m.id)
+        .sort();
+
+      // Update stored models
+      provider.models = modelIds;
+      const db = getDatabase();
+      db.prepare('UPDATE llm_providers SET models = ?, updated_at = datetime(\'now\') WHERE id = ?')
+        .run(JSON.stringify(modelIds), providerId);
+
+      Logger.info(`Fetched ${modelIds.length} models for provider ${provider.name}`);
+      return modelIds;
+    } catch (error) {
+      Logger.error(`Failed to fetch models for ${provider.name}:`, error);
+      throw error;
     }
   }
 }

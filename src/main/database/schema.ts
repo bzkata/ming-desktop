@@ -100,4 +100,16 @@ export function runMigrations(): void {
     `);
     db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(migration2Name);
   }
+
+  // Migration: add enabled_models to llm_providers
+  const migration3Name = 'add-enabled-models';
+  const applied3 = db.prepare('SELECT 1 FROM _migrations WHERE name = ?').get(migration3Name);
+  if (!applied3) {
+    try {
+      db.exec(`ALTER TABLE llm_providers ADD COLUMN enabled_models TEXT DEFAULT '[]'`);
+    } catch {
+      // Column may already exist on fresh installs
+    }
+    db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(migration3Name);
+  }
 }

@@ -66,6 +66,7 @@ export interface LLMProvider {
   apiKey?: string;
   baseURL?: string;
   models: string[];
+  enabledModels: string[];
   enabled: boolean;
 }
 
