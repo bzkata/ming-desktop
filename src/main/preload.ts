@@ -18,6 +18,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     list: () => ipcRenderer.invoke(IPCChannels.AGENT_LIST),
   },
 
+  // Conversation API
+  conversations: {
+    create: () => ipcRenderer.invoke(IPCChannels.CONVERSATION_CREATE),
+    list: () => ipcRenderer.invoke(IPCChannels.CONVERSATION_LIST),
+    messages: (conversationId: string) =>
+      ipcRenderer.invoke(IPCChannels.CONVERSATION_MESSAGES, conversationId),
+    delete: (conversationId: string) =>
+      ipcRenderer.invoke(IPCChannels.CONVERSATION_DELETE, conversationId),
+    rename: (conversationId: string, title: string) =>
+      ipcRenderer.invoke(IPCChannels.CONVERSATION_RENAME, conversationId, title),
+    chat: (conversationId: string, agentId: string, message: string) =>
+      ipcRenderer.invoke(IPCChannels.CONVERSATION_CHAT, conversationId, agentId, message),
+  },
+
   // LLM API
   llm: {
     listProviders: () => ipcRenderer.invoke(IPCChannels.LLM_LIST_PROVIDERS),
@@ -67,6 +81,14 @@ export interface ElectronAPI {
     create: (config: any) => Promise<string>;
     chat: (agentId: string, message: string) => Promise<string>;
     list: () => Promise<any[]>;
+  };
+  conversations: {
+    create: () => Promise<any>;
+    list: () => Promise<any[]>;
+    messages: (conversationId: string) => Promise<any[]>;
+    delete: (conversationId: string) => Promise<void>;
+    rename: (conversationId: string, title: string) => Promise<void>;
+    chat: (conversationId: string, agentId: string, message: string) => Promise<string>;
   };
   llm: {
     listProviders: () => Promise<any[]>;

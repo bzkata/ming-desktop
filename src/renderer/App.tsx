@@ -38,6 +38,14 @@ interface ElectronAPI {
   git: {
     scanRepos: () => Promise<{ name: string; path: string }[]>;
   };
+  conversations: {
+    create: () => Promise<any>;
+    list: () => Promise<any[]>;
+    messages: (conversationId: string) => Promise<any[]>;
+    delete: (conversationId: string) => Promise<void>;
+    rename: (conversationId: string, title: string) => Promise<void>;
+    chat: (conversationId: string, agentId: string, message: string) => Promise<string>;
+  };
 }
 
 declare global {

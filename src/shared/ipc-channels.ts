@@ -45,4 +45,12 @@ export enum IPCChannels {
 
   // Git 相关
   GIT_SCAN_REPOS = 'git:scan-repos',
+
+  // Conversation 相关
+  CONVERSATION_CREATE = 'conversation:create',
+  CONVERSATION_LIST = 'conversation:list',
+  CONVERSATION_MESSAGES = 'conversation:messages',
+  CONVERSATION_DELETE = 'conversation:delete',
+  CONVERSATION_RENAME = 'conversation:rename',
+  CONVERSATION_CHAT = 'conversation:chat',
 }

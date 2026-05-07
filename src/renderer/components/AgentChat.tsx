@@ -1,10 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
-import { Send, Bot, User, Plus, Trash2 } from 'lucide-react';
+import { Send, Bot, User, Plus, Trash2, MessageSquare, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 
 interface Agent {
@@ -12,6 +24,14 @@ interface Agent {
   name: string;
   description: string;
   model: string;
+}
+
+interface Conversation {
+  id: string;
+  title: string;
+  agentId?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface Message {
@@ -22,14 +42,20 @@ interface Message {
 
 export default function AgentChat() {
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
+  const [renameValue, setRenameValue] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadAgents();
+    loadConversations();
   }, []);
 
   useEffect(() => {
@@ -40,16 +66,92 @@ export default function AgentChat() {
     try {
       const result = await window.electronAPI.agents.list();
       setAgents(result);
-      if (result.length > 0) {
-        setSelectedAgent(result[0]);
+      if (result.length > 0 && !selectedAgentId) {
+        setSelectedAgentId(result[0].id);
       }
     } catch (error) {
       console.error('Failed to load agents:', error);
     }
   };
 
+  const loadConversations = async () => {
+    try {
+      const result = await window.electronAPI.conversations.list();
+      setConversations(result);
+    } catch (error) {
+      console.error('Failed to load conversations:', error);
+    }
+  };
+
+  const handleNewConversation = async () => {
+    try {
+      const conv = await window.electronAPI.conversations.create();
+      setConversations(prev => [conv, ...prev]);
+      setCurrentConversationId(conv.id);
+      setMessages([]);
+    } catch (error) {
+      console.error('Failed to create conversation:', error);
+    }
+  };
+
+  const handleSelectConversation = async (conv: Conversation) => {
+    setCurrentConversationId(conv.id);
+    if (conv.agentId) {
+      setSelectedAgentId(conv.agentId);
+    }
+    try {
+      const msgs = await window.electronAPI.conversations.messages(conv.id);
+      setMessages(msgs.filter((m: any) => m.role !== 'system'));
+    } catch (error) {
+      console.error('Failed to load messages:', error);
+      setMessages([]);
+    }
+  };
+
+  const handleDeleteConversation = async (convId: string) => {
+    try {
+      await window.electronAPI.conversations.delete(convId);
+      setConversations(prev => prev.filter(c => c.id !== convId));
+      if (currentConversationId === convId) {
+        setCurrentConversationId(null);
+        setMessages([]);
+      }
+    } catch (error) {
+      console.error('Failed to delete conversation:', error);
+    }
+  };
+
+  const handleRenameConversation = async () => {
+    if (!renameTarget || !renameValue.trim()) return;
+    try {
+      await window.electronAPI.conversations.rename(renameTarget.id, renameValue.trim());
+      setConversations(prev =>
+        prev.map(c => c.id === renameTarget.id ? { ...c, title: renameValue.trim() } : c)
+      );
+      setRenameDialogOpen(false);
+      setRenameTarget(null);
+      setRenameValue('');
+    } catch (error) {
+      console.error('Failed to rename conversation:', error);
+    }
+  };
+
   const handleSendMessage = async () => {
-    if (!input.trim() || !selectedAgent || isLoading) return;
+    if (!input.trim() || !selectedAgentId || isLoading) return;
+
+    // Auto-create conversation if none selected
+    let convId = currentConversationId;
+    if (!convId) {
+      try {
+        const conv = await window.electronAPI.conversations.create();
+        convId = conv.id;
+        setConversations(prev => [conv, ...prev]);
+        setCurrentConversationId(convId);
+      } catch (error) {
+        console.error('Failed to create conversation:', error);
+        return;
+      }
+    }
 
     const userMessage: Message = {
       role: 'user',
@@ -62,13 +164,15 @@ export default function AgentChat() {
     setIsLoading(true);
 
     try {
-      const response = await window.electronAPI.agents.chat(selectedAgent.id, input);
+      const response = await window.electronAPI.conversations.chat(convId!, selectedAgentId, input);
       const assistantMessage: Message = {
         role: 'assistant',
         content: response,
         timestamp: new Date().toISOString()
       };
       setMessages(prev => [...prev, assistantMessage]);
+      // Refresh conversation list to get updated title/timestamp
+      loadConversations();
     } catch (error) {
       const errorMessage: Message = {
         role: 'assistant',
@@ -88,71 +192,105 @@ export default function AgentChat() {
     }
   };
 
+  const selectedAgent = agents.find(a => a.id === selectedAgentId);
+
   return (
     <div className="h-full flex">
-      {/* Agent List */}
-      <div className="w-80 bg-background border-r border-border flex flex-col">
-        <div className="p-4 border-b border-border">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Agents</h2>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
-              <Plus size={18} />
-            </Button>
-          </div>
+      {/* Conversation Sidebar */}
+      <div className="w-64 bg-background border-r border-border flex flex-col">
+        <div className="p-3 border-b border-border">
+          <Button onClick={handleNewConversation} className="w-full" size="sm">
+            <Plus size={16} className="mr-2" />
+            New Chat
+          </Button>
         </div>
 
         <ScrollArea className="flex-1">
-          <div className="p-4 space-y-2">
-            {agents.map((agent) => (
-              <button
-                key={agent.id}
-                onClick={() => {
-                  setSelectedAgent(agent);
-                  setMessages([]);
-                }}
+          <div className="p-2 space-y-1">
+            {conversations.map((conv) => (
+              <div
+                key={conv.id}
+                onClick={() => handleSelectConversation(conv)}
                 className={cn(
-                  'w-full text-left p-4 rounded-lg transition-all',
-                  selectedAgent?.id === agent.id
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted hover:bg-secondary'
+                  'group flex items-center gap-2 p-2 rounded-md cursor-pointer text-sm transition-colors',
+                  currentConversationId === conv.id
+                    ? 'bg-primary/10 text-primary'
+                    : 'hover:bg-muted'
                 )}
               >
-                <div className="flex items-center gap-3 mb-2">
-                  <Bot size={20} />
-                  <span className="font-medium">{agent.name}</span>
-                </div>
-                <p className="text-sm text-muted-foreground line-clamp-2">{agent.description}</p>
-                <Badge variant="secondary" className="mt-2 text-xs">
-                  {agent.model}
-                </Badge>
-              </button>
+                <MessageSquare size={14} className="shrink-0 opacity-50" />
+                <span className="flex-1 truncate">{conv.title}</span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 opacity-0 group-hover:opacity-100 shrink-0"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      ...
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={(e) => {
+                      e.stopPropagation();
+                      setRenameTarget(conv);
+                      setRenameValue(conv.title);
+                      setRenameDialogOpen(true);
+                    }}>
+                      <Pencil size={14} className="mr-2" />
+                      Rename
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteConversation(conv.id);
+                    }}>
+                      <Trash2 size={14} className="mr-2" />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             ))}
           </div>
         </ScrollArea>
       </div>
 
-      {/* Chat Area */}
+      {/* Main Chat Area */}
       <div className="flex-1 flex flex-col">
-        {/* Chat Header */}
-        {selectedAgent && (
-          <>
-            <div className="p-4 border-b border-border bg-background">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Bot size={24} className="text-primary" />
-                  <div>
-                    <h3 className="font-semibold">{selectedAgent.name}</h3>
-                    <p className="text-sm text-muted-foreground">{selectedAgent.description}</p>
-                  </div>
+        {/* Header with agent selector */}
+        <div className="p-4 border-b border-border bg-background">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Bot size={24} className="text-primary" />
+              {selectedAgent ? (
+                <div>
+                  <h3 className="font-semibold">{selectedAgent.name}</h3>
+                  <p className="text-sm text-muted-foreground">{selectedAgent.description}</p>
                 </div>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                  <Trash2 size={18} />
-                </Button>
-              </div>
+              ) : (
+                <div>
+                  <h3 className="font-semibold">Select an agent</h3>
+                  <p className="text-sm text-muted-foreground">Choose an agent to start chatting</p>
+                </div>
+              )}
             </div>
-            <Separator />
-          </>
-        )}
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedAgentId || ''}
+                onChange={(e) => setSelectedAgentId(e.target.value)}
+                className="text-sm border border-border rounded-md px-3 py-1.5 bg-background"
+              >
+                {agents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+        <Separator />
 
         {/* Messages */}
         <ScrollArea className="flex-1">
@@ -181,11 +319,7 @@ export default function AgentChat() {
                         : 'bg-muted'
                     )}
                   >
-                    {message.role === 'user' ? (
-                      <User size={20} />
-                    ) : (
-                      <Bot size={20} />
-                    )}
+                    {message.role === 'user' ? <User size={20} /> : <Bot size={20} />}
                   </div>
                   <div
                     className={cn(
@@ -219,7 +353,7 @@ export default function AgentChat() {
         </ScrollArea>
 
         {/* Input */}
-        {selectedAgent && (
+        {selectedAgentId && (
           <>
             <Separator />
             <div className="p-4 bg-background">
@@ -229,7 +363,7 @@ export default function AgentChat() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyPress={handleKeyPress}
-                  placeholder={`Message ${selectedAgent.name}...`}
+                  placeholder={`Message ${selectedAgent?.name || 'agent'}...`}
                   disabled={isLoading}
                   className="flex-1"
                 />
@@ -245,6 +379,26 @@ export default function AgentChat() {
           </>
         )}
       </div>
+
+      {/* Rename Dialog */}
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename Conversation</DialogTitle>
+          </DialogHeader>
+          <Input
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleRenameConversation();
+            }}
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRenameDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleRenameConversation}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

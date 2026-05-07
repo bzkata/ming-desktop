@@ -81,4 +81,23 @@ export function runMigrations(): void {
     `);
     db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(migrationName);
   }
+
+  // Migration: add conversations table and conversation_id to chat_messages
+  const migration2Name = 'add-conversations';
+  const applied2 = db.prepare('SELECT 1 FROM _migrations WHERE name = ?').get(migration2Name);
+  if (!applied2) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS conversations (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL DEFAULT 'New Conversation',
+        agent_id TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      ALTER TABLE chat_messages ADD COLUMN conversation_id TEXT;
+      CREATE INDEX IF NOT EXISTS idx_messages_conversation ON chat_messages(conversation_id, timestamp);
+    `);
+    db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(migration2Name);
+  }
 }

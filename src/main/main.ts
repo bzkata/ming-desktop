@@ -104,6 +104,31 @@ function setupIPCHandlers(): void {
     return agentManager.listAgents();
   });
 
+  // Conversation 相关
+  ipcMain.handle(IPCChannels.CONVERSATION_CREATE, async () => {
+    return agentManager.createConversation();
+  });
+
+  ipcMain.handle(IPCChannels.CONVERSATION_LIST, async () => {
+    return agentManager.listConversations();
+  });
+
+  ipcMain.handle(IPCChannels.CONVERSATION_MESSAGES, async (_, conversationId: string) => {
+    return agentManager.getConversationMessages(conversationId);
+  });
+
+  ipcMain.handle(IPCChannels.CONVERSATION_DELETE, async (_, conversationId: string) => {
+    return agentManager.deleteConversation(conversationId);
+  });
+
+  ipcMain.handle(IPCChannels.CONVERSATION_RENAME, async (_, conversationId: string, title: string) => {
+    return agentManager.renameConversation(conversationId, title);
+  });
+
+  ipcMain.handle(IPCChannels.CONVERSATION_CHAT, async (_, conversationId: string, agentId: string, message: string) => {
+    return agentManager.chatInConversation(conversationId, agentId, message);
+  });
+
   // LLM Provider 相关
   ipcMain.handle(IPCChannels.LLM_LIST_PROVIDERS, async () => {
     return llmManager.listProviders();

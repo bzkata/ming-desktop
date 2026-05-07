@@ -50,6 +50,14 @@ export interface ChatMessage {
   timestamp?: string;
 }
 
+export interface Conversation {
+  id: string;
+  title: string;
+  agentId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // LLM Provider 相关类型
 export interface LLMProvider {
   id: string;

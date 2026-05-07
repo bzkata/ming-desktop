@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { randomUUID } from 'crypto';
-import { Agent, AgentConfig, ChatMessage } from '../../shared/types';
+import { Agent, AgentConfig, ChatMessage, Conversation } from '../../shared/types';
 import { DEFAULT_DAILY_REPORTER_SYSTEM_PROMPT } from '../../shared/dailyReportDefaults';
 import { Logger } from '../utils/Logger';
 import { LLMProviderManager } from '../llm/LLMProviderManager';
@@ -239,5 +239,130 @@ You have access to:
     db.prepare('DELETE FROM chat_messages WHERE agent_id = ?').run(agentId);
     this.emit('chat-cleared', agentId);
     Logger.info(`Chat history cleared for agent: ${agentId}`);
+  }
+
+  // Conversation methods
+  createConversation(): Conversation {
+    const db = getDatabase();
+    const id = `conv-${randomUUID().slice(0, 8)}`;
+    db.prepare(`
+      INSERT INTO conversations (id, title, created_at, updated_at) VALUES (?, 'New Conversation', datetime('now'), datetime('now'))
+    `).run(id);
+    const row = db.prepare('SELECT id, title, agent_id, created_at, updated_at FROM conversations WHERE id = ?').get(id) as any;
+    return {
+      id: row.id,
+      title: row.title,
+      agentId: row.agent_id || undefined,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    };
+  }
+
+  listConversations(): Conversation[] {
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT id, title, agent_id, created_at, updated_at FROM conversations
+      ORDER BY updated_at DESC
+    `).all() as any[];
+    return rows.map(r => ({
+      id: r.id,
+      title: r.title,
+      agentId: r.agent_id || undefined,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at
+    }));
+  }
+
+  getConversationMessages(conversationId: string): ChatMessage[] {
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT role, content, timestamp FROM chat_messages
+      WHERE conversation_id = ? ORDER BY timestamp ASC LIMIT 100
+    `).all(conversationId) as any[];
+    return rows.map(r => ({
+      role: r.role,
+      content: r.content,
+      timestamp: r.timestamp
+    }));
+  }
+
+  deleteConversation(conversationId: string): void {
+    const db = getDatabase();
+    db.prepare('DELETE FROM chat_messages WHERE conversation_id = ?').run(conversationId);
+    db.prepare('DELETE FROM conversations WHERE id = ?').run(conversationId);
+    Logger.info(`Conversation deleted: ${conversationId}`);
+  }
+
+  renameConversation(conversationId: string, title: string): void {
+    const db = getDatabase();
+    db.prepare("UPDATE conversations SET title = ?, updated_at = datetime('now') WHERE id = ?").run(title, conversationId);
+  }
+
+  async chatInConversation(conversationId: string, agentId: string, userMessage: string): Promise<string> {
+    const agent = this.agents.get(agentId);
+    if (!agent) {
+      throw new Error(`Agent not found: ${agentId}`);
+    }
+
+    const db = getDatabase();
+
+    // Auto-generate title from first user message
+    const existingMessages = db.prepare(
+      'SELECT COUNT(*) as count FROM chat_messages WHERE conversation_id = ?'
+    ).get(conversationId) as any;
+    if (existingMessages.count === 0) {
+      const title = userMessage.slice(0, 30) + (userMessage.length > 30 ? '...' : '');
+      db.prepare("UPDATE conversations SET title = ?, agent_id = ?, updated_at = datetime('now') WHERE id = ?")
+        .run(title, agentId, conversationId);
+    }
+
+    // Save user message
+    db.prepare(`
+      INSERT INTO chat_messages (agent_id, role, content, conversation_id) VALUES (?, 'user', ?, ?)
+    `).run(agentId, userMessage, conversationId);
+
+    // Load recent history from DB (last 10 messages in this conversation)
+    const rows = db.prepare(`
+      SELECT role, content, timestamp FROM chat_messages
+      WHERE conversation_id = ? ORDER BY timestamp DESC LIMIT 10
+    `).all(conversationId) as any[];
+    const history: ChatMessage[] = rows.reverse().map(r => ({
+      role: r.role,
+      content: r.content,
+      timestamp: r.timestamp
+    }));
+
+    const systemContent =
+      agent.name === 'Daily Reporter'
+        ? (this.configManager.get('dailyReporterSystemPrompt') as string | undefined)?.trim() ||
+          agent.systemPrompt
+        : agent.systemPrompt;
+
+    const messages: ChatMessage[] = [
+      { role: 'system', content: systemContent },
+      ...history
+    ];
+
+    try {
+      const providerId = this.llmManager.getDefaultProviderId();
+      if (!providerId) {
+        throw new Error('No LLM providers configured');
+      }
+
+      const response = await this.llmManager.chat(providerId, messages);
+
+      // Save assistant response
+      db.prepare(`
+        INSERT INTO chat_messages (agent_id, role, content, conversation_id) VALUES (?, 'assistant', ?, ?)
+      `).run(agentId, response, conversationId);
+
+      // Bump conversation updated_at
+      db.prepare("UPDATE conversations SET updated_at = datetime('now') WHERE id = ?").run(conversationId);
+
+      return response;
+    } catch (error) {
+      Logger.error(`Conversation chat failed:`, error);
+      throw error;
+    }
   }
 }
