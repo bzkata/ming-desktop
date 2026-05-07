@@ -299,7 +299,7 @@ You have access to:
     db.prepare("UPDATE conversations SET title = ?, updated_at = datetime('now') WHERE id = ?").run(title, conversationId);
   }
 
-  async chatInConversation(conversationId: string, agentId: string, userMessage: string, model?: string): Promise<string> {
+  private prepareConversationMessages(conversationId: string, agentId: string, userMessage: string): { agent: Agent; messages: ChatMessage[] } {
     const agent = this.agents.get(agentId);
     if (!agent) {
       throw new Error(`Agent not found: ${agentId}`);
@@ -344,6 +344,13 @@ You have access to:
       ...history
     ];
 
+    return { agent, messages };
+  }
+
+  async chatInConversation(conversationId: string, agentId: string, userMessage: string, model?: string): Promise<string> {
+    const { messages } = this.prepareConversationMessages(conversationId, agentId, userMessage);
+    const db = getDatabase();
+
     try {
       const providerId = this.llmManager.getDefaultProviderId();
       if (!providerId) {
@@ -374,53 +381,21 @@ You have access to:
     model: string | undefined,
     webContents: Electron.WebContents
   ): Promise<void> {
-    const agent = this.agents.get(agentId);
-    if (!agent) {
-      webContents.send(IPCChannels.CONVERSATION_STREAM_ERROR, {
-        conversationId,
-        error: `Agent not found: ${agentId}`,
-      });
+    let messages: ChatMessage[];
+    try {
+      const result = this.prepareConversationMessages(conversationId, agentId, userMessage);
+      messages = result.messages;
+    } catch (error) {
+      if (!webContents.isDestroyed()) {
+        webContents.send(IPCChannels.CONVERSATION_STREAM_ERROR, {
+          conversationId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
       return;
     }
 
     const db = getDatabase();
-
-    // Auto-generate title from first user message
-    const existingMessages = db.prepare(
-      'SELECT COUNT(*) as count FROM chat_messages WHERE conversation_id = ?'
-    ).get(conversationId) as any;
-    if (existingMessages.count === 0) {
-      const title = userMessage.slice(0, 30) + (userMessage.length > 30 ? '...' : '');
-      db.prepare("UPDATE conversations SET title = ?, agent_id = ?, updated_at = datetime('now') WHERE id = ?")
-        .run(title, agentId, conversationId);
-    }
-
-    // Save user message
-    db.prepare(`
-      INSERT INTO chat_messages (agent_id, role, content, conversation_id) VALUES (?, 'user', ?, ?)
-    `).run(agentId, userMessage, conversationId);
-
-    // Load recent history from DB (last 10 messages in this conversation)
-    const rows = db.prepare(`
-      SELECT role, content, timestamp FROM chat_messages
-      WHERE conversation_id = ? ORDER BY timestamp DESC LIMIT 10
-    `).all(conversationId) as any[];
-    const history: ChatMessage[] = rows.reverse().map(r => ({
-      role: r.role,
-      content: r.content,
-      timestamp: r.timestamp
-    }));
-
-    const systemContent =
-      agent.name === 'Daily Reporter'
-        ? (this.configManager.get('dailyReporterSystemPrompt') as string | undefined)?.trim() ||
-          agent.systemPrompt
-        : agent.systemPrompt;
-
-    const messages: ChatMessage[] = [
-      { role: 'system', content: systemContent },
-      ...history
-    ];
 
     try {
       const providerId = this.llmManager.getDefaultProviderId();
@@ -434,14 +409,18 @@ You have access to:
         model,
         // onChunk: push to renderer
         (text: string) => {
-          webContents.send(IPCChannels.CONVERSATION_STREAM_CHUNK, {
-            conversationId,
-            content: text,
-          });
+          if (!webContents.isDestroyed()) {
+            webContents.send(IPCChannels.CONVERSATION_STREAM_CHUNK, {
+              conversationId,
+              content: text,
+            });
+          }
         },
         // onDebug: push debug event to renderer
         (event) => {
-          webContents.send(IPCChannels.DEBUG_MODEL_CALL, event);
+          if (!webContents.isDestroyed()) {
+            webContents.send(IPCChannels.DEBUG_MODEL_CALL, event);
+          }
         }
       );
 
@@ -454,18 +433,22 @@ You have access to:
       db.prepare("UPDATE conversations SET updated_at = datetime('now') WHERE id = ?").run(conversationId);
 
       // Send stream end
-      webContents.send(IPCChannels.CONVERSATION_STREAM_END, {
-        conversationId,
-        fullContent: result.fullContent,
-        usage: result.usage,
-      });
+      if (!webContents.isDestroyed()) {
+        webContents.send(IPCChannels.CONVERSATION_STREAM_END, {
+          conversationId,
+          fullContent: result.fullContent,
+          usage: result.usage,
+        });
+      }
 
     } catch (error) {
       Logger.error(`Conversation streaming chat failed:`, error);
-      webContents.send(IPCChannels.CONVERSATION_STREAM_ERROR, {
-        conversationId,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
+      if (!webContents.isDestroyed()) {
+        webContents.send(IPCChannels.CONVERSATION_STREAM_ERROR, {
+          conversationId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
     }
   }
 }
