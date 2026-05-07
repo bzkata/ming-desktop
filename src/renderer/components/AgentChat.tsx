@@ -148,6 +148,8 @@ export default function AgentChat() {
   const [renameValue, setRenameValue] = useState('');
   const [providers, setProviders] = useState<LLMProvider[]>([]);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
+  const [debugLogs, setDebugLogs] = useState<any[]>([]);
+  const [debugPanelOpen, setDebugPanelOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -159,6 +161,13 @@ export default function AgentChat() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    const remove = window.electronAPI.debug?.onModelCall((data) => {
+      setDebugLogs(prev => [...prev.slice(-49), data]); // keep last 50 entries
+    });
+    return () => remove?.();
+  }, []);
 
   const loadAgents = async () => {
     try {
@@ -278,26 +287,50 @@ export default function AgentChat() {
     setInput('');
     setIsLoading(true);
 
-    try {
-      const response = await window.electronAPI.conversations.chat(convId!, selectedAgentId, input, selectedModel || undefined);
-      const assistantMessage: Message = {
-        role: 'assistant',
-        content: response,
-        timestamp: new Date().toISOString()
-      };
-      setMessages(prev => [...prev, assistantMessage]);
+    // Add empty assistant message that will be filled incrementally
+    setMessages(prev => [...prev, { role: 'assistant', content: '', timestamp: new Date().toISOString() }]);
+
+    // Set up streaming listeners
+    const removeChunk = window.electronAPI.conversations.onStreamChunk((data) => {
+      if (data.conversationId !== convId) return;
+      setMessages(prev => {
+        const updated = [...prev];
+        const last = updated[updated.length - 1];
+        if (last && last.role === 'assistant') {
+          updated[updated.length - 1] = { ...last, content: last.content + data.content };
+        }
+        return updated;
+      });
+    });
+
+    const removeEnd = window.electronAPI.conversations.onStreamEnd((data) => {
+      if (data.conversationId !== convId) return;
+      setIsLoading(false);
+      removeChunk();
+      removeEnd();
+      removeError();
       // Refresh conversation list to get updated title/timestamp
       loadConversations();
-    } catch (error) {
-      const errorMessage: Message = {
-        role: 'assistant',
-        content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        timestamp: new Date().toISOString()
-      };
-      setMessages(prev => [...prev, errorMessage]);
-    } finally {
+    });
+
+    const removeError = window.electronAPI.conversations.onStreamError((data) => {
+      if (data.conversationId !== convId) return;
+      setMessages(prev => {
+        const updated = [...prev];
+        const last = updated[updated.length - 1];
+        if (last && last.role === 'assistant') {
+          updated[updated.length - 1] = { ...last, content: `Error: ${data.error}` };
+        }
+        return updated;
+      });
       setIsLoading(false);
-    }
+      removeChunk();
+      removeEnd();
+      removeError();
+    });
+
+    // Send the message (fire-and-forget, response comes via listeners)
+    window.electronAPI.conversations.chat(convId!, selectedAgentId, input, selectedModel || undefined);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -425,6 +458,64 @@ export default function AgentChat() {
         </div>
         <Separator />
 
+        {/* Debug Panel Toggle */}
+        <div className="flex items-center gap-2 px-4 py-1.5 bg-muted/50 border-b border-border">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs h-6"
+            onClick={() => setDebugPanelOpen(!debugPanelOpen)}
+          >
+            {debugPanelOpen ? 'Hide' : 'Show'} Debug ({debugLogs.length})
+          </Button>
+          {debugPanelOpen && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs h-6"
+              onClick={() => setDebugLogs([])}
+            >
+              Clear
+            </Button>
+          )}
+        </div>
+
+        {/* Debug Panel Content */}
+        {debugPanelOpen && (
+          <div className="border-b border-border bg-black text-green-400 font-mono text-xs overflow-auto max-h-64">
+            {debugLogs.length === 0 ? (
+              <div className="p-4 text-muted-foreground">No debug logs yet. Send a message to see API calls.</div>
+            ) : (
+              <div className="p-2 space-y-1">
+                {debugLogs.map((log, i) => (
+                  <details key={i} className="group">
+                    <summary className="cursor-pointer hover:bg-white/5 px-2 py-1 rounded flex items-center gap-2">
+                      <span className={cn(
+                        'px-1.5 py-0.5 rounded text-[10px] font-bold uppercase',
+                        log.type === 'request' ? 'bg-blue-600 text-white' :
+                        log.type === 'response' ? 'bg-green-600 text-white' :
+                        log.type === 'chunk' ? 'bg-yellow-600 text-black' :
+                        'bg-red-600 text-white'
+                      )}>
+                        {log.type}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {new Date(log.timestamp).toLocaleTimeString()}
+                      </span>
+                      {log.data.provider && <span className="text-cyan-400">{log.data.provider}</span>}
+                      {log.data.model && <span className="text-purple-400">{log.data.model}</span>}
+                      {log.data.duration != null && <span className="text-muted-foreground">{log.data.duration}ms</span>}
+                    </summary>
+                    <div className="ml-4 mt-1 p-2 bg-white/5 rounded overflow-auto max-h-48">
+                      <pre className="whitespace-pre-wrap break-all">{JSON.stringify(log.data, null, 2)}</pre>
+                    </div>
+                  </details>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Messages */}
         <ScrollArea className="flex-1">
           <div className="p-6 space-y-4">
@@ -440,7 +531,7 @@ export default function AgentChat() {
                 <MessageBubble key={index} message={message} />
               ))
             )}
-            {isLoading && (
+            {isLoading && messages[messages.length - 1]?.content === '' && (
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg bg-muted">
                   <Bot size={20} />
