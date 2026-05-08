@@ -101,6 +101,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dailyReport: {
     fetch: (params: any) => ipcRenderer.invoke(IPCChannels.DAILY_REPORT_FETCH, params),
   },
+
+  // TechStack 分析 API
+  techStack: {
+    analyzeApp: (filePath: string) => ipcRenderer.invoke(IPCChannels.ANALYZE_APP, filePath),
+    analyzeProject: (dirPath: string) => ipcRenderer.invoke(IPCChannels.ANALYZE_PROJECT, dirPath),
+  },
 });
 
 // 类型定义
@@ -152,5 +158,9 @@ export interface ElectronAPI {
   };
   dailyReport: {
     fetch: (params: any) => Promise<any>;
+  };
+  techStack: {
+    analyzeApp: (filePath: string) => Promise<any>;
+    analyzeProject: (dirPath: string) => Promise<any>;
   };
 }

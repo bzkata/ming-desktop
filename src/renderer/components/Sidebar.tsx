@@ -1,4 +1,4 @@
-import { LayoutDashboard, MessageSquare, Bot, Settings, Sun, Moon, Monitor, Home } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, Bot, Settings, Sun, Moon, Monitor, Home, Search } from 'lucide-react';
 import { useTheme } from '../App';
 import { Button } from './ui/button';
 import { Separator } from './ui/separator';
@@ -15,6 +15,7 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
   const menuItems = [
     { id: 'welcome', label: 'Welcome', icon: Home },
     { id: 'dashboard', label: 'Workground', icon: LayoutDashboard },
+    { id: 'techstack', label: 'Analyzer', icon: Search },
     { id: 'chat', label: 'Chat', icon: MessageSquare },
     { id: 'agents', label: 'Agents', icon: Bot },
     { id: 'settings', label: 'Settings', icon: Settings },

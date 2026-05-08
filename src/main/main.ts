@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { execSync } from 'child_process';
+import { execSync, exec } from 'child_process';
 import { IPCChannels } from '../shared/ipc-channels';
 import { AgentManager } from './agent/AgentManager';
 import { LLMProviderManager } from './llm/LLMProviderManager';
@@ -244,7 +244,394 @@ function setupIPCHandlers(): void {
     return JSON.parse(result); // tool 返回 JSON 字符串，解析成对象
   });
 
+  // TechStack - 分析 DMG/App 安装包
+  ipcMain.handle(IPCChannels.ANALYZE_APP, async (_, filePath: string) => {
+    return analyzeAppBundle(filePath);
+  });
+
+  // TechStack - 分析项目文件夹
+  ipcMain.handle(IPCChannels.ANALYZE_PROJECT, async (_, dirPath: string) => {
+    return analyzeProjectDir(dirPath);
+  });
+
   Logger.info('IPC handlers registered');
+}
+
+// ─── TechStack Analysis Functions ─────────────────────────────────────
+
+interface FrameworkDetection {
+  name: string;
+  confidence: 'high' | 'medium' | 'low';
+  version?: string;
+  evidence: string[];
+}
+
+interface AppAnalysisResult {
+  appName: string;
+  version?: string;
+  bundleId?: string;
+  frameworks: FrameworkDetection[];
+  resources: { type: string; count: number };
+  fileType: string;
+}
+
+interface ProjectAnalysisResult {
+  languages: { name: string; percentage: number }[];
+  frameworks: string[];
+  buildTools: string[];
+  packageManagers: string[];
+  dependencies: { manager: string; count: number };
+}
+
+function execAsync(cmd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    exec(cmd, { encoding: 'utf-8', timeout: 30000 }, (err, stdout) => {
+      if (err) reject(err);
+      else resolve(stdout.trim());
+    });
+  });
+}
+
+async function analyzeAppBundle(filePath: string): Promise<AppAnalysisResult> {
+  const ext = path.extname(filePath).toLowerCase();
+  const basename = path.basename(filePath, ext);
+  const result: AppAnalysisResult = {
+    appName: basename,
+    frameworks: [],
+    resources: { type: '', count: 0 },
+    fileType: ext,
+  };
+
+  let appPath = filePath;
+
+  // DMG: mount, find .app, analyze, unmount
+  if (ext === '.dmg') {
+    try {
+      const mountOutput = await execAsync(`hdiutil attach "${filePath}" -nobrowse -noverify -quiet 2>&1`);
+      const mountPoint = mountOutput.split('\t').pop()?.trim();
+      if (!mountPoint) throw new Error('Failed to mount DMG');
+
+      // Find .app inside mounted volume
+      const entries = fs.readdirSync(mountPoint);
+      const appEntry = entries.find(e => e.endsWith('.app'));
+      if (appEntry) {
+        appPath = path.join(mountPoint, appEntry);
+        await analyzeMacApp(appPath, result);
+      }
+
+      await execAsync(`hdiutil detach "${mountPoint}" -quiet`);
+    } catch (err: any) {
+      result.frameworks.push({ name: '分析失败', confidence: 'low', evidence: [err.message] });
+    }
+    return result;
+  }
+
+  // .app bundle
+  if (ext === '.app' || fs.existsSync(path.join(filePath, 'Contents'))) {
+    await analyzeMacApp(appPath, result);
+  } else {
+    result.frameworks.push({ name: 'Unsupported format', confidence: 'low', evidence: [`File extension: ${ext}`] });
+  }
+
+  return result;
+}
+
+async function analyzeMacApp(appPath: string, result: AppAnalysisResult) {
+  const contents = path.join(appPath, 'Contents');
+  if (!fs.existsSync(contents)) return;
+
+  // Read Info.plist for app name, version, bundle ID
+  const plistPath = path.join(contents, 'Info.plist');
+  if (fs.existsSync(plistPath)) {
+    try {
+      const plistContent = fs.readFileSync(plistPath, 'utf-8');
+      const nameMatch = plistContent.match(/<key>CFBundleName<\/key>\s*<string>(.*?)<\/string>/);
+      const versionMatch = plistContent.match(/<key>CFBundleShortVersionString<\/key>\s*<string>(.*?)<\/string>/);
+      const bundleMatch = plistContent.match(/<key>CFBundleIdentifier<\/key>\s*<string>(.*?)<\/string>/);
+      if (nameMatch) result.appName = nameMatch[1];
+      if (versionMatch) result.version = versionMatch[1];
+      if (bundleMatch) result.bundleId = bundleMatch[1];
+    } catch { /* skip */ }
+  }
+
+  const frameworksDir = path.join(contents, 'Frameworks');
+  const resourcesDir = path.join(contents, 'Resources');
+
+  // Detect frameworks
+  const detections: FrameworkDetection[] = [];
+
+  // Electron
+  if (fs.existsSync(path.join(frameworksDir, 'Electron Framework.framework')) ||
+      fs.existsSync(path.join(resourcesDir, 'app.asar')) ||
+      fs.existsSync(path.join(resourcesDir, 'app.asar.unpacked'))) {
+    const evidence: string[] = [];
+    if (fs.existsSync(path.join(frameworksDir, 'Electron Framework.framework'))) evidence.push('Electron Framework.framework');
+    if (fs.existsSync(path.join(resourcesDir, 'app.asar'))) evidence.push('app.asar');
+    // Try to detect Electron version
+    let version: string | undefined;
+    try {
+      const electronFramework = path.join(frameworksDir, 'Electron Framework.framework', 'Versions', 'A', 'Resources', 'version');
+      if (fs.existsSync(electronFramework)) {
+        version = fs.readFileSync(electronFramework, 'utf-8').trim();
+      }
+    } catch { /* skip */ }
+    detections.push({ name: 'Electron', confidence: 'high', version, evidence });
+  }
+
+  // Tauri
+  if (fs.existsSync(path.join(frameworksDir, 'WebView2.framework')) ||
+      fs.existsSync(path.join(resourcesDir, '_updater'))) {
+    detections.push({ name: 'Tauri', confidence: 'high', evidence: ['WebView2 or _updater detected'] });
+  }
+
+  // Flutter
+  if (fs.existsSync(path.join(frameworksDir, 'App.framework', 'Flutter')) ||
+      fs.existsSync(path.join(contents, 'Frameworks', 'FlutterMacOS.framework'))) {
+    detections.push({ name: 'Flutter', confidence: 'high', evidence: ['Flutter framework detected'] });
+  }
+
+  // React Native (macOS)
+  const jsbundleFiles = fs.existsSync(resourcesDir)
+    ? fs.readdirSync(resourcesDir).filter(f => f.endsWith('.jsbundle') || f.endsWith('.bundle'))
+    : [];
+  if (jsbundleFiles.length > 0) {
+    // Could be RN or just a JS bundle - check for React Native specifics
+    detections.push({ name: 'React Native', confidence: 'medium', evidence: jsbundleFiles.slice(0, 3) });
+  }
+
+  // Qt
+  if (fs.existsSync(path.join(frameworksDir, 'QtCore.framework')) ||
+      fs.existsSync(path.join(frameworksDir, 'QtGui.framework'))) {
+    detections.push({ name: 'Qt', confidence: 'high', evidence: ['QtCore/QtGui framework detected'] });
+  }
+
+  // Java/JVM
+  if (fs.existsSync(path.join(frameworksDir, 'java')) ||
+      fs.existsSync(path.join(contents, 'Java'))) {
+    detections.push({ name: 'Java', confidence: 'high', evidence: ['Java runtime detected'] });
+  }
+
+  // Unity
+  if (fs.existsSync(path.join(frameworksDir, 'UnityPlayer.framework')) ||
+      fs.existsSync(path.join(resourcesDir, 'Data', 'Managed'))) {
+    detections.push({ name: 'Unity', confidence: 'high', evidence: ['Unity engine detected'] });
+  }
+
+  // If no specific framework found, it's likely native (SwiftUI/AppKit)
+  if (detections.length === 0) {
+    detections.push({ name: 'Native (AppKit/SwiftUI)', confidence: 'medium', evidence: ['No cross-platform framework detected'] });
+  }
+
+  result.frameworks = detections;
+
+  // Count resources
+  if (fs.existsSync(resourcesDir)) {
+    try {
+      const resourceFiles = fs.readdirSync(resourcesDir, { recursive: true }) as string[];
+      const jsFiles = resourceFiles.filter(f => f.endsWith('.js') || f.endsWith('.mjs')).length;
+      const htmlFiles = resourceFiles.filter(f => f.endsWith('.html')).length;
+      const imgFiles = resourceFiles.filter(f => /\.(png|jpg|jpeg|svg|gif|icns)$/.test(f.toString())).length;
+      result.resources = { type: `${jsFiles} JS, ${htmlFiles} HTML, ${imgFiles} images`, count: resourceFiles.length };
+    } catch { /* skip */ }
+  }
+}
+
+async function analyzeProjectDir(dirPath: string): Promise<ProjectAnalysisResult> {
+  const result: ProjectAnalysisResult = {
+    languages: [],
+    frameworks: [],
+    buildTools: [],
+    packageManagers: [],
+    dependencies: { manager: '', count: 0 },
+  };
+
+  // Detect languages by file extension count
+  const extCounts: Record<string, number> = {};
+  const maxDepth = 4;
+  const maxFiles = 5000;
+
+  function countFiles(dir: string, depth: number, total: number): number {
+    if (depth <= 0 || total >= maxFiles) return total;
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (total >= maxFiles) break;
+        if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'vendor' || entry.name === '__pycache__' || entry.name === '.git') continue;
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          total = countFiles(fullPath, depth - 1, total);
+        } else {
+          const ext = path.extname(entry.name).toLowerCase();
+          if (ext) extCounts[ext] = (extCounts[ext] || 0) + 1;
+          total++;
+        }
+      }
+    } catch { /* skip */ }
+    return total;
+  }
+
+  countFiles(dirPath, maxDepth, 0);
+
+  // Map extensions to languages
+  const extToLang: Record<string, string> = {
+    '.ts': 'TypeScript', '.tsx': 'TypeScript', '.js': 'JavaScript', '.jsx': 'JavaScript', '.mjs': 'JavaScript',
+    '.py': 'Python', '.pyi': 'Python',
+    '.rs': 'Rust', '.go': 'Go', '.java': 'Java', '.kt': 'Kotlin', '.swift': 'Swift',
+    '.c': 'C', '.h': 'C', '.cpp': 'C++', '.hpp': 'C++', '.cc': 'C++',
+    '.cs': 'C#', '.rb': 'Ruby', '.php': 'PHP', '.vue': 'Vue', '.svelte': 'Svelte',
+    '.css': 'CSS', '.scss': 'CSS', '.less': 'CSS', '.html': 'HTML', '.xml': 'XML',
+    '.json': 'JSON', '.yaml': 'YAML', '.yml': 'YAML', '.toml': 'TOML',
+    '.sh': 'Shell', '.bash': 'Shell', '.sql': 'SQL',
+    '.dart': 'Dart', '.ex': 'Elixir', '.exs': 'Elixir', '.erl': 'Erlang',
+    '.scala': 'Scala', '.lua': 'Lua', '.r': 'R',
+  };
+
+  const langCounts: Record<string, number> = {};
+  for (const [ext, count] of Object.entries(extCounts)) {
+    const lang = extToLang[ext];
+    if (lang) langCounts[lang] = (langCounts[lang] || 0) + count;
+  }
+
+  const totalLangFiles = Object.values(langCounts).reduce((a, b) => a + b, 0) || 1;
+  result.languages = Object.entries(langCounts)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 8)
+    .map(([name, count]) => ({ name, percentage: Math.round(count / totalLangFiles * 100) }));
+
+  // Detect frameworks from config files
+  const frameworks = new Set<string>();
+  const buildTools = new Set<string>();
+  const packageManagers = new Set<string>();
+  let depCount = 0;
+  let depManager = '';
+
+  // package.json
+  const pkgPath = path.join(dirPath, 'package.json');
+  if (fs.existsSync(pkgPath)) {
+    try {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+      const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
+      depCount = Object.keys(allDeps).length;
+      depManager = 'npm';
+
+      // Detect frameworks
+      if (allDeps['react'] || allDeps['react-dom']) frameworks.add('React');
+      if (allDeps['vue']) frameworks.add('Vue');
+      if (allDeps['@angular/core']) frameworks.add('Angular');
+      if (allDeps['svelte']) frameworks.add('Svelte');
+      if (allDeps['next']) frameworks.add('Next.js');
+      if (allDeps['nuxt']) frameworks.add('Nuxt');
+      if (allDeps['@remix-run/react']) frameworks.add('Remix');
+      if (allDeps['gatsby']) frameworks.add('Gatsby');
+      if (allDeps['express']) frameworks.add('Express');
+      if (allDeps['fastify']) frameworks.add('Fastify');
+      if (allDeps['nestjs'] || allDeps['@nestjs/core']) frameworks.add('NestJS');
+      if (allDeps['electron']) frameworks.add('Electron');
+      if (allDeps['@tauri-apps/api']) frameworks.add('Tauri');
+      if (allDeps['three']) frameworks.add('Three.js');
+      if (allDeps['d3']) frameworks.add('D3.js');
+      if (allDeps['tailwindcss']) buildTools.add('Tailwind CSS');
+      if (allDeps['webpack']) buildTools.add('Webpack');
+      if (allDeps['vite']) buildTools.add('Vite');
+      if (allDeps['esbuild']) buildTools.add('esbuild');
+      if (allDeps['rollup']) buildTools.add('Rollup');
+      if (allDeps['@babel/core']) buildTools.add('Babel');
+      if (allDeps['typescript'] || allDeps['ts-node']) buildTools.add('TypeScript');
+      if (allDeps['eslint']) buildTools.add('ESLint');
+      if (allDeps['prettier']) buildTools.add('Prettier');
+      if (allDeps['jest']) buildTools.add('Jest');
+      if (allDeps['vitest']) buildTools.add('Vitest');
+    } catch { /* skip */ }
+
+    if (fs.existsSync(path.join(dirPath, 'pnpm-lock.yaml'))) { packageManagers.add('pnpm'); depManager = 'pnpm'; }
+    if (fs.existsSync(path.join(dirPath, 'yarn.lock'))) { packageManagers.add('yarn'); depManager = 'yarn'; }
+    if (fs.existsSync(path.join(dirPath, 'bun.lockb'))) { packageManagers.add('bun'); depManager = 'bun'; }
+    if (!packageManagers.size) packageManagers.add('npm');
+  }
+
+  // Cargo.toml
+  const cargoPath = path.join(dirPath, 'Cargo.toml');
+  if (fs.existsSync(cargoPath)) {
+    frameworks.add('Rust');
+    packageManagers.add('Cargo');
+    try {
+      const content = fs.readFileSync(cargoPath, 'utf-8');
+      const depMatches = content.match(/^\[dependencies\]$/m);
+      if (depMatches) {
+        const depSection = content.split(/^\[dependencies\]$/m)[1]?.split(/^\[/m)[0] || '';
+        const depLines = depSection.split('\n').filter(l => l.includes('='));
+        depCount += depLines.length;
+        depManager = depManager || 'Cargo';
+        if (content.includes('actix')) frameworks.add('Actix');
+        if (content.includes('axum')) frameworks.add('Axum');
+        if (content.includes('tokio')) frameworks.add('Tokio');
+        if (content.includes('serde')) buildTools.add('Serde');
+        if (content.includes('clap')) buildTools.add('Clap');
+      }
+    } catch { /* skip */ }
+  }
+
+  // pyproject.toml / requirements.txt
+  if (fs.existsSync(path.join(dirPath, 'pyproject.toml'))) {
+    frameworks.add('Python');
+    packageManagers.add('pip');
+    try {
+      const content = fs.readFileSync(path.join(dirPath, 'pyproject.toml'), 'utf-8');
+      if (content.includes('django')) frameworks.add('Django');
+      if (content.includes('flask')) frameworks.add('Flask');
+      if (content.includes('fastapi')) frameworks.add('FastAPI');
+    } catch { /* skip */ }
+  } else if (fs.existsSync(path.join(dirPath, 'requirements.txt'))) {
+    frameworks.add('Python');
+    packageManagers.add('pip');
+  }
+
+  // go.mod
+  if (fs.existsSync(path.join(dirPath, 'go.mod'))) {
+    frameworks.add('Go');
+    packageManagers.add('Go Modules');
+    try {
+      const content = fs.readFileSync(path.join(dirPath, 'go.mod'), 'utf-8');
+      const requireLines = content.split('\n').filter(l => l.startsWith('\t'));
+      depCount += requireLines.length;
+      depManager = depManager || 'Go Modules';
+      if (content.includes('gin-gonic')) frameworks.add('Gin');
+      if (content.includes('echo')) frameworks.add('Echo');
+      if (content.includes('fiber')) frameworks.add('Fiber');
+    } catch { /* skip */ }
+  }
+
+  // pom.xml / build.gradle
+  if (fs.existsSync(path.join(dirPath, 'pom.xml')) || fs.existsSync(path.join(dirPath, 'build.gradle')) || fs.existsSync(path.join(dirPath, 'build.gradle.kts'))) {
+    frameworks.add('Java/Kotlin');
+    if (fs.existsSync(path.join(dirPath, 'pom.xml'))) { packageManagers.add('Maven'); depManager = depManager || 'Maven'; }
+    else { packageManagers.add('Gradle'); depManager = depManager || 'Gradle'; }
+  }
+
+  // .csproj / .sln
+  const csFiles = fs.readdirSync(dirPath).filter(f => f.endsWith('.csproj') || f.endsWith('.sln'));
+  if (csFiles.length > 0) {
+    frameworks.add('.NET');
+    packageManagers.add('NuGet');
+  }
+
+  // Gemfile
+  if (fs.existsSync(path.join(dirPath, 'Gemfile'))) {
+    frameworks.add('Ruby');
+    packageManagers.add('Bundler');
+  }
+
+  // Docker
+  if (fs.existsSync(path.join(dirPath, 'Dockerfile'))) {
+    buildTools.add('Docker');
+  }
+
+  result.frameworks = Array.from(frameworks);
+  result.buildTools = Array.from(buildTools);
+  result.packageManagers = Array.from(packageManagers);
+  result.dependencies = { manager: depManager, count: depCount };
+
+  return result;
 }
 
 app.whenReady().then(async () => {

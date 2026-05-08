@@ -5,6 +5,7 @@ import Dashboard from './components/Dashboard';
 import AgentChat from './components/AgentChat';
 import AgentManager from './components/AgentManager';
 import Settings from './components/Settings';
+import TechStackAnalyzer from './components/TechStackAnalyzer';
 import { themePresets, defaultThemeName, applyThemePreset, type ThemePreset } from './lib/themes';
 
 interface ElectronAPI {
@@ -54,6 +55,10 @@ interface ElectronAPI {
   };
   dailyReport: {
     fetch: (params: any) => Promise<any>;
+  };
+  techStack: {
+    analyzeApp: (filePath: string) => Promise<any>;
+    analyzeProject: (dirPath: string) => Promise<any>;
   };
 }
 
@@ -212,6 +217,7 @@ function App() {
           {/* Content */}
           <div className="flex-1 overflow-hidden">
             {activeTab === 'welcome' && <Welcome />}
+            {activeTab === 'techstack' && <TechStackAnalyzer />}
             {activeTab === 'dashboard' && <Dashboard />}
             {activeTab === 'chat' && <AgentChat />}
             {activeTab === 'agents' && <AgentManager />}
