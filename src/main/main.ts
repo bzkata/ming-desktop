@@ -66,7 +66,7 @@ async function initializeServices(): Promise<void> {
   llmManager = new LLMProviderManager(configManager);
   await llmManager.initialize();
 
-  // 初始化执行服务（插件执行日报脚本依赖此项）
+  // 初始化执行服务（日报 tool 执行 Python 脚本依赖此项）
   executorService = new ExecutorService(configManager);
   await executorService.initialize();
 
