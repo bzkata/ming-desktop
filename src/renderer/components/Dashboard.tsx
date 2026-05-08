@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Calendar as CalendarIcon, Clock, GitBranch, FileText, TrendingUp, Play, RefreshCw, Folder, Activity, User, Plus, Minus, Copy, Check } from 'lucide-react';
+import { Calendar as CalendarIcon, GitBranch, FileText, TrendingUp, Play, RefreshCw, Folder, Activity, User, Plus, Minus, Copy, Check } from 'lucide-react';
 import { format } from 'date-fns';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -8,7 +8,6 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from './ui/sheet';
-import { Switch } from './ui/switch';
 import { Calendar } from './ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { cn } from '@/lib/utils';
@@ -40,16 +39,16 @@ export default function Dashboard() {
   const [stats, setStats] = useState({
     totalCommits: 0,
     totalRepos: 0,
-    workHours: 0,
   });
   const [workPaths, setWorkPaths] = useState<string[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [gitRepos, setGitRepos] = useState<GitRepo[]>([]);
   const [activeSheet, setActiveSheet] = useState<'commits' | 'repos' | 'report' | null>(null);
-  const [onlyMine, setOnlyMine] = useState(false);
   const [reportContent, setReportContent] = useState('');
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
   const [copiedReport, setCopiedReport] = useState(false);
+  const [dailyReporterAgentId, setDailyReporterAgentId] = useState<string | null>(null);
+  const [gitUser, setGitUser] = useState({ name: '', email: '' });
 
   // Sort repos by activity: repos with commits first (sorted by date desc), then repos without commits
   const sortedGitRepos = useMemo(() => {
@@ -96,7 +95,16 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadWorkPaths();
+    window.electronAPI.git.getUser().then(setGitUser).catch(() => {});
   }, [loadWorkPaths]);
+
+  // Find Daily Reporter agent on mount
+  useEffect(() => {
+    window.electronAPI.agents.list().then(agents => {
+      const reporter = agents.find((a: any) => a.name === 'Daily Reporter');
+      if (reporter) setDailyReporterAgentId(reporter.id);
+    });
+  }, []);
 
   useEffect(() => {
     if (workPaths.length > 0) {
@@ -110,6 +118,7 @@ export default function Dashboard() {
     const params: any = {
       timeRange: timeRange === 'custom' ? 'today' : timeRange,
       includeAllBranches: true,
+      author: 'zhangbing',
     };
     if (timeRange === 'custom') {
       if (customSince) params.sinceDate = format(customSince, 'yyyy-MM-dd');
@@ -133,12 +142,11 @@ export default function Dashboard() {
       setStats({
         totalCommits: commitList.length,
         totalRepos: reposWithCommits.size,
-        workHours: 0, // TODO: calculate from commit timestamps
       });
     } catch (error) {
       console.error('Failed to fetch stats:', error);
       setCommits([]);
-      setStats({ totalCommits: 0, totalRepos: 0, workHours: 0 });
+      setStats({ totalCommits: 0, totalRepos: 0 });
     } finally {
       setIsRefreshing(false);
     }
@@ -151,50 +159,70 @@ export default function Dashboard() {
   }, [workPaths, fetchStats]);
 
   const handleGenerateReport = async () => {
+    // Refresh commit stats first (for the stats cards)
+    await fetchStats();
+
+    if (!dailyReporterAgentId) {
+      console.error('Daily Reporter agent not found');
+      return;
+    }
+
     setIsGenerating(true);
+    setReportContent('');
+    setActiveSheet('report');
+
     try {
-      const params = buildReportParams();
-      const result = await window.electronAPI.dailyReport.fetch(params);
+      // Create a conversation for this report
+      const conv = await window.electronAPI.conversations.create();
 
-      const commitList = result.commits || [];
-      setCommits(commitList);
-
-      // Generate report content using commits data
-      // TODO: Use Agent chat to generate markdown report
-      const byRepo: Record<string, CommitInfo[]> = {};
-      for (const c of commitList) {
-        if (!byRepo[c.repo]) byRepo[c.repo] = [];
-        byRepo[c.repo].push(c);
+      // Build user message with time range context
+      const timeRangeLabels: Record<string, string> = {
+        today: '今天',
+        yesterday: '昨天',
+        day_before_yesterday: '前天',
+        week: '本周',
+      };
+      let rangeLabel = timeRangeLabels[timeRange] || timeRange;
+      if (timeRange === 'custom') {
+        const parts = [];
+        if (customSince) parts.push(format(customSince, 'yyyy-MM-dd'));
+        if (customUntil) parts.push(`至 ${format(customUntil, 'yyyy-MM-dd')}`);
+        rangeLabel = parts.join(' ') || '自定义范围';
       }
+      const userMessage = `请生成工作日报，时间范围：${rangeLabel}`;
 
-      let report = `# 工作日报 - ${format(new Date(), 'yyyy年MM月dd日')}\n\n`;
-      for (const [repo, repoCommits] of Object.entries(byRepo)) {
-        report += `## ${repo}\n\n`;
-        for (const c of repoCommits) {
-          report += `- ${c.message}\n`;
+      // Set up stream listeners
+      const unsubChunk = window.electronAPI.conversations.onStreamChunk((data) => {
+        if (data.conversationId === conv.id) {
+          setReportContent(prev => prev + data.content);
         }
-        report += '\n';
-      }
-      setReportContent(report);
+      });
+      const unsubEnd = window.electronAPI.conversations.onStreamEnd(() => {
+        unsubChunk();
+        unsubEnd();
+        unsubError();
+        setIsGenerating(false);
+      });
+      const unsubError = window.electronAPI.conversations.onStreamError((data) => {
+        unsubChunk();
+        unsubEnd();
+        unsubError();
+        console.error('Report generation error:', data.error);
+        setIsGenerating(false);
+      });
+
+      // Fire the chat — agent will call daily-report tool and format the response
+      window.electronAPI.conversations.chat(conv.id, dailyReporterAgentId, userMessage);
     } catch (error) {
       console.error('Failed to generate report:', error);
-      setCommits([]);
-      setReportContent('');
-    } finally {
       setIsGenerating(false);
     }
   };
 
-  // Filter commits by author when "only mine" is toggled (client-side)
-  const filteredCommits = useMemo(() => {
-    if (!onlyMine) return commits;
-    return commits.filter(c => c.author === 'zhangbing');
-  }, [commits, onlyMine]);
-
   // Group commits by repo
   const commitsByRepo = useMemo(() => {
     const grouped: Record<string, CommitInfo[]> = {};
-    for (const c of filteredCommits) {
+    for (const c of commits) {
       if (!grouped[c.repo]) grouped[c.repo] = [];
       grouped[c.repo].push(c);
     }
@@ -203,7 +231,7 @@ export default function Dashboard() {
       grouped[repo].sort((a, b) => b.date.localeCompare(a.date));
     }
     return grouped;
-  }, [filteredCommits]);
+  }, [commits]);
 
   const copyToClipboard = useCallback(async (text: string, hash?: string) => {
     try {
@@ -226,8 +254,7 @@ export default function Dashboard() {
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold mb-2 text-foreground">Dashboard</h1>
-            <p className="text-muted-foreground">Welcome to 銘</p>
+            <h1 className="text-3xl font-bold text-foreground">Workground</h1>
           </div>
           <div className="flex items-center gap-2">
             <Select value={timeRange} onValueChange={setTimeRange}>
@@ -366,18 +393,19 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="p-3 rounded-lg bg-blue-500/10">
-                  <Clock size={24} className="text-blue-500" />
+          {gitUser.name && (
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="p-3 rounded-lg bg-violet-500/10">
+                    <User size={24} className="text-violet-500" />
+                  </div>
                 </div>
-                <span className="text-sm text-muted-foreground">Estimated</span>
-              </div>
-              <div className="text-3xl font-bold mb-1 text-foreground">{stats.workHours}h</div>
-              <div className="text-sm text-muted-foreground">Work Time</div>
-            </CardContent>
-          </Card>
+                <div className="text-lg font-bold mb-1 text-foreground truncate">{gitUser.name}</div>
+                <div className="text-sm text-muted-foreground truncate">{gitUser.email}</div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Daily Report Sheet */}
@@ -434,7 +462,7 @@ export default function Dashboard() {
               <div className="flex items-center justify-between pr-6">
                 <SheetTitle className="flex items-center gap-2">
                   <CalendarIcon size={18} />
-                  Commit Details ({filteredCommits.length} commits in {Object.keys(commitsByRepo).length} repos)
+                  Commit Details ({commits.length} commits in {Object.keys(commitsByRepo).length} repos)
                 </SheetTitle>
               </div>
               <SheetDescription>
@@ -442,11 +470,7 @@ export default function Dashboard() {
               </SheetDescription>
             </SheetHeader>
             <div className="mt-4">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <Switch checked={onlyMine} onCheckedChange={setOnlyMine} />
-                  <span className="text-sm text-muted-foreground">只看我</span>
-                </div>
+              <div className="flex items-center justify-end mb-4">
                 <Button
                   onClick={handleGenerateReport}
                   disabled={isGenerating}
@@ -457,7 +481,7 @@ export default function Dashboard() {
                 </Button>
               </div>
 
-              {filteredCommits.length === 0 ? (
+              {commits.length === 0 ? (
                 <div className="text-sm text-muted-foreground py-8 text-center">
                   没有找到提交记录
                 </div>

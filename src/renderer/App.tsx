@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import Sidebar from './components/Sidebar';
+import Welcome from './components/Welcome';
 import Dashboard from './components/Dashboard';
 import AgentChat from './components/AgentChat';
 import AgentManager from './components/AgentManager';
@@ -149,7 +150,7 @@ function ThemeProvider({ children }: { children: React.ReactNode }) {
 function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState('welcome');
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -210,6 +211,7 @@ function App() {
 
           {/* Content */}
           <div className="flex-1 overflow-hidden">
+            {activeTab === 'welcome' && <Welcome />}
             {activeTab === 'dashboard' && <Dashboard />}
             {activeTab === 'chat' && <AgentChat />}
             {activeTab === 'agents' && <AgentManager />}

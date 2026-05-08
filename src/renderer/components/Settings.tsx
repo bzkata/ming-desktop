@@ -1,16 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Save, RotateCcw, Key, Settings as SettingsIcon, Palette, Globe, FileText, FolderOpen, Plus, X } from 'lucide-react';
+import { Save, RotateCcw, Key, Settings as SettingsIcon, Palette, Globe, FolderOpen, Plus, X } from 'lucide-react';
 import LLMConfiguration from './LLMConfiguration';
-import {
-  DEFAULT_DAILY_REPORT_TEMPLATE,
-} from '../../shared/dailyReportDefaults';
 import { useTheme } from '../App';
 import { themePresets } from '@/lib/themes';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './ui/select';
 import { Switch } from './ui/switch';
-import { Textarea } from './ui/textarea';
 import { Label } from './ui/label';
 import { cn } from '@/lib/utils';
 
@@ -20,7 +16,6 @@ export default function Settings() {
   const [language, setLanguage] = useState('zh-CN');
   const [autoUpdate, setAutoUpdate] = useState(true);
   const [workPaths, setWorkPaths] = useState<string[]>([]);
-  const [dailyReportTemplate, setDailyReportTemplate] = useState(DEFAULT_DAILY_REPORT_TEMPLATE);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -36,9 +31,6 @@ export default function Settings() {
       if (Array.isArray(config.workPaths)) {
         setWorkPaths(config.workPaths);
       }
-      if (config.dailyReportTemplate) {
-        setDailyReportTemplate(config.dailyReportTemplate);
-      }
     } catch (error) {
       console.error('Failed to load settings:', error);
     }
@@ -51,7 +43,6 @@ export default function Settings() {
       await window.electronAPI.config.set('language', language);
       await window.electronAPI.config.set('autoUpdate', autoUpdate);
       await window.electronAPI.config.set('workPaths', workPaths);
-      await window.electronAPI.config.set('dailyReportTemplate', dailyReportTemplate);
     } catch (error) {
       console.error('Failed to save settings:', error);
     } finally {
@@ -66,7 +57,6 @@ export default function Settings() {
         await window.electronAPI.config.set('language', 'zh-CN');
         await window.electronAPI.config.set('autoUpdate', true);
         await window.electronAPI.config.set('workPaths', []);
-        await window.electronAPI.config.set('dailyReportTemplate', DEFAULT_DAILY_REPORT_TEMPLATE);
         await loadSettings();
       } catch (error) {
         console.error('Failed to reset settings:', error);
@@ -251,40 +241,6 @@ export default function Settings() {
                 <Plus size={16} />
                 Add Folder
               </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Daily report prompts */}
-        <Card className="mb-6">
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-accent">
-                <FileText size={20} className="text-primary" />
-              </div>
-              <div>
-                <CardTitle className="text-lg">日报提示词与模板</CardTitle>
-                <CardDescription>
-                  自定义从 Git 日志生成 Markdown 日报的模板
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div>
-                <Label className="mb-2 block">日报 Markdown 模板</Label>
-                <p className="text-xs mb-2 text-muted-foreground">
-                  占位符：{'{date}'} {'{total_commits}'} {'{total_repos}'} {'{work_hours}'} {'{commit_details}'}{' '}
-                  {'{stats}'} {'{generated_at}'}
-                </p>
-                <Textarea
-                  value={dailyReportTemplate}
-                  onChange={(e) => setDailyReportTemplate(e.target.value)}
-                  className="font-mono text-sm min-h-[220px] w-full"
-                  spellCheck={false}
-                />
-              </div>
             </div>
           </CardContent>
         </Card>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Plus, Pencil, Trash2, Bot, Cpu } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
@@ -7,6 +7,7 @@ import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { Label } from './ui/label';
 import { Badge } from './ui/badge';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './ui/select';
 
 interface Agent {
   id: string;
@@ -33,10 +34,35 @@ export default function AgentManager() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [providers, setProviders] = useState<any[]>([]);
 
   useEffect(() => {
     loadAgents();
+    loadProviders();
   }, []);
+
+  const loadProviders = async () => {
+    try {
+      const list = await window.electronAPI.llm.listProviders();
+      setProviders(list || []);
+    } catch {
+      setProviders([]);
+    }
+  };
+
+  // Collect all enabled models from enabled providers
+  const availableModels = useMemo(() => {
+    const models: { value: string; label: string }[] = [];
+    for (const p of providers.filter((p: any) => p.enabled)) {
+      const enabled = p.enabledModels?.length ? p.enabledModels : p.models || [];
+      for (const m of enabled) {
+        if (!models.some((x) => x.value === m)) {
+          models.push({ value: m, label: `${m} (${p.name})` });
+        }
+      }
+    }
+    return models;
+  }, [providers]);
 
   const loadAgents = async () => {
     try {
@@ -227,11 +253,22 @@ export default function AgentManager() {
 
               <div>
                 <Label className="mb-2 block">模型</Label>
-                <Input
-                  value={form.model}
-                  onChange={(e) => setForm({ ...form, model: e.target.value })}
-                  placeholder="留空使用 Provider 默认"
-                />
+                <Select
+                  value={form.model || '__default__'}
+                  onValueChange={(v) => setForm({ ...form, model: v === '__default__' ? '' : v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="留空使用 Provider 默认" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__default__">Provider 默认</SelectItem>
+                    {availableModels.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div>

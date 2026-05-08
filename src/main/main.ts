@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import { execSync } from 'child_process';
 import { IPCChannels } from '../shared/ipc-channels';
 import { AgentManager } from './agent/AgentManager';
 import { LLMProviderManager } from './llm/LLMProviderManager';
@@ -224,6 +225,17 @@ function setupIPCHandlers(): void {
       seen.add(r.path);
       return true;
     });
+  });
+
+  // Git user info
+  ipcMain.handle(IPCChannels.GIT_GET_USER, () => {
+    try {
+      const name = execSync('git config user.name', { encoding: 'utf-8' }).trim();
+      const email = execSync('git config user.email', { encoding: 'utf-8' }).trim();
+      return { name, email };
+    } catch {
+      return { name: '', email: '' };
+    }
   });
 
   // Daily Report - 调用 daily-report tool 收集 Git 提交数据

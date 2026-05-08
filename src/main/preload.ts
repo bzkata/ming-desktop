@@ -94,6 +94,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Git API
   git: {
     scanRepos: () => ipcRenderer.invoke(IPCChannels.GIT_SCAN_REPOS),
+    getUser: () => ipcRenderer.invoke(IPCChannels.GIT_GET_USER),
   },
 
   // Daily Report API
@@ -147,6 +148,7 @@ export interface ElectronAPI {
   };
   git: {
     scanRepos: () => Promise<{ name: string; path: string }[]>;
+    getUser: () => Promise<{ name: string; email: string }>;
   };
   dailyReport: {
     fetch: (params: any) => Promise<any>;

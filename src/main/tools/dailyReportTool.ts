@@ -32,6 +32,10 @@ const DEFINITION: ToolDefinition = {
           items: { type: 'string' },
           description: 'Git 仓库路径列表。留空则使用 Settings 中配置的 workPaths',
         },
+        author: {
+          type: 'string',
+          description: '按 Git 作者过滤（如 zhangbing）',
+        },
       },
     },
   },
@@ -65,6 +69,7 @@ export function createDailyReportTool(
 
       if (params.sinceDate) env.SINCE_DATE = params.sinceDate;
       if (params.untilDate) env.UNTIL_DATE = params.untilDate;
+      if (params.author) env.FILTER_BY_AUTHOR = params.author;
 
       const result = await executorService.executeCommand(`python3 ${scriptPath}`, {
         cwd: home || undefined,

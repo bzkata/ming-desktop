@@ -41,6 +41,7 @@ export enum IPCChannels {
 
   // Git 相关
   GIT_SCAN_REPOS = 'git:scan-repos',
+  GIT_GET_USER = 'git:get-user',
   DAILY_REPORT_FETCH = 'daily-report:fetch',
 
   // Conversation 相关

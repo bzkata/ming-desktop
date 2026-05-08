@@ -1,0 +1,77 @@
+import { useState, useEffect } from 'react';
+import { User, Mail, GitBranch, Folder, Calendar } from 'lucide-react';
+import { Card, CardContent } from './ui/card';
+import { format } from 'date-fns';
+
+export default function Welcome() {
+  const [gitUser, setGitUser] = useState({ name: '', email: '' });
+  const [repoCount, setRepoCount] = useState(0);
+
+  useEffect(() => {
+    window.electronAPI.git.getUser().then(setGitUser).catch(() => {});
+    window.electronAPI.git.scanRepos().then(repos => setRepoCount(repos?.length || 0)).catch(() => {});
+  }, []);
+
+  return (
+    <div className="h-full overflow-y-auto p-8">
+      <div className="max-w-3xl mx-auto">
+        {/* Greeting */}
+        <div className="mb-10">
+          <h1 className="text-4xl font-bold mb-2 text-foreground">
+            Welcome to 銘
+          </h1>
+          <p className="text-muted-foreground text-lg">
+            {format(new Date(), 'yyyy年MM月dd日 EEEE')}
+          </p>
+        </div>
+
+        {/* Info Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Git User */}
+          {gitUser.name && (
+            <Card>
+              <CardContent className="pt-6">
+                <div className="p-3 rounded-lg bg-violet-500/10 w-fit mb-4">
+                  <User size={24} className="text-violet-500" />
+                </div>
+                <div className="text-lg font-semibold text-foreground">{gitUser.name}</div>
+                {gitUser.email && (
+                  <div className="flex items-center gap-1.5 mt-1 text-sm text-muted-foreground">
+                    <Mail size={12} />
+                    {gitUser.email}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Repos */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="p-3 rounded-lg bg-emerald-500/10 w-fit mb-4">
+                <Folder size={24} className="text-emerald-500" />
+              </div>
+              <div className="text-lg font-semibold text-foreground">{repoCount}</div>
+              <div className="text-sm text-muted-foreground">Git Repositories</div>
+            </CardContent>
+          </Card>
+
+          {/* Date */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="p-3 rounded-lg bg-blue-500/10 w-fit mb-4">
+                <Calendar size={24} className="text-blue-500" />
+              </div>
+              <div className="text-lg font-semibold text-foreground">
+                {format(new Date(), 'HH:mm')}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {format(new Date(), 'yyyy/MM/dd')}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
