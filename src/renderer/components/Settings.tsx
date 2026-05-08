@@ -3,9 +3,7 @@ import { Save, RotateCcw, Key, Settings as SettingsIcon, Palette, Globe, FileTex
 import LLMConfiguration from './LLMConfiguration';
 import {
   DEFAULT_DAILY_REPORT_TEMPLATE,
-  DEFAULT_DAILY_REPORTER_SYSTEM_PROMPT
 } from '../../shared/dailyReportDefaults';
-import type { LLMProvider } from '../../shared/types';
 import { useTheme } from '../App';
 import { themePresets } from '@/lib/themes';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from './ui/card';
@@ -23,12 +21,6 @@ export default function Settings() {
   const [autoUpdate, setAutoUpdate] = useState(true);
   const [workPaths, setWorkPaths] = useState<string[]>([]);
   const [dailyReportTemplate, setDailyReportTemplate] = useState(DEFAULT_DAILY_REPORT_TEMPLATE);
-  const [dailyReporterSystemPrompt, setDailyReporterSystemPrompt] = useState(
-    DEFAULT_DAILY_REPORTER_SYSTEM_PROMPT
-  );
-  const [dailyReportProvider, setDailyReportProvider] = useState('');
-  const [dailyReportModel, setDailyReportModel] = useState('');
-  const [llmProviders, setLlmProviders] = useState<LLMProvider[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -47,14 +39,6 @@ export default function Settings() {
       if (config.dailyReportTemplate) {
         setDailyReportTemplate(config.dailyReportTemplate);
       }
-      if (config.dailyReporterSystemPrompt) {
-        setDailyReporterSystemPrompt(config.dailyReporterSystemPrompt);
-      }
-      setDailyReportProvider(config.dailyReportProvider || '');
-      setDailyReportModel(config.dailyReportModel || '');
-
-      const providers = await window.electronAPI.llm.listProviders();
-      setLlmProviders(Array.isArray(providers) ? providers : []);
     } catch (error) {
       console.error('Failed to load settings:', error);
     }
@@ -68,9 +52,6 @@ export default function Settings() {
       await window.electronAPI.config.set('autoUpdate', autoUpdate);
       await window.electronAPI.config.set('workPaths', workPaths);
       await window.electronAPI.config.set('dailyReportTemplate', dailyReportTemplate);
-      await window.electronAPI.config.set('dailyReporterSystemPrompt', dailyReporterSystemPrompt);
-      await window.electronAPI.config.set('dailyReportProvider', dailyReportProvider);
-      await window.electronAPI.config.set('dailyReportModel', dailyReportModel);
     } catch (error) {
       console.error('Failed to save settings:', error);
     } finally {
@@ -86,12 +67,6 @@ export default function Settings() {
         await window.electronAPI.config.set('autoUpdate', true);
         await window.electronAPI.config.set('workPaths', []);
         await window.electronAPI.config.set('dailyReportTemplate', DEFAULT_DAILY_REPORT_TEMPLATE);
-        await window.electronAPI.config.set(
-          'dailyReporterSystemPrompt',
-          DEFAULT_DAILY_REPORTER_SYSTEM_PROMPT
-        );
-        await window.electronAPI.config.set('dailyReportProvider', '');
-        await window.electronAPI.config.set('dailyReportModel', '');
         await loadSettings();
       } catch (error) {
         console.error('Failed to reset settings:', error);
@@ -290,59 +265,13 @@ export default function Settings() {
               <div>
                 <CardTitle className="text-lg">日报提示词与模板</CardTitle>
                 <CardDescription>
-                  下方模板用于从 Git 生成 Markdown 日报；系统提示词用于「Daily Reporter」对话 Agent
+                  自定义从 Git 日志生成 Markdown 日报的模板
                 </CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="mb-2 block">LLM Provider</Label>
-                  <Select
-                    value={dailyReportProvider || '__default__'}
-                    onValueChange={(v) => {
-                      const providerId = v === '__default__' ? '' : v;
-                      setDailyReportProvider(providerId);
-                      setDailyReportModel('');
-                    }}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="使用全局默认" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__default__">使用全局默认</SelectItem>
-                      {llmProviders.filter(p => p.enabled).map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.name} ({p.type})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="mb-2 block">Model</Label>
-                  <Select
-                    value={dailyReportModel || '__default__'}
-                    onValueChange={(v) => setDailyReportModel(v === '__default__' ? '' : v)}
-                    disabled={!dailyReportProvider}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="使用 Provider 默认" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__default__">使用 Provider 默认</SelectItem>
-                      {llmProviders
-                        .filter(p => p.id === dailyReportProvider)
-                        .flatMap(p => p.enabledModels || p.models || [])
-                        .map((m) => (
-                          <SelectItem key={m} value={m}>{m}</SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
               <div>
                 <Label className="mb-2 block">日报 Markdown 模板</Label>
                 <p className="text-xs mb-2 text-muted-foreground">
@@ -353,15 +282,6 @@ export default function Settings() {
                   value={dailyReportTemplate}
                   onChange={(e) => setDailyReportTemplate(e.target.value)}
                   className="font-mono text-sm min-h-[220px] w-full"
-                  spellCheck={false}
-                />
-              </div>
-              <div>
-                <Label className="mb-2 block">Daily Reporter 系统提示词</Label>
-                <Textarea
-                  value={dailyReporterSystemPrompt}
-                  onChange={(e) => setDailyReporterSystemPrompt(e.target.value)}
-                  className="font-mono text-sm min-h-[120px] w-full"
                   spellCheck={false}
                 />
               </div>

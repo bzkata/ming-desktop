@@ -52,9 +52,7 @@ export class AgentManager extends EventEmitter {
   }
 
   private async createDefaultAgents(): Promise<void> {
-    const dailyReporterPrompt =
-      (this.configManager.get('dailyReporterSystemPrompt') as string | undefined)?.trim() ||
-      DEFAULT_DAILY_REPORTER_SYSTEM_PROMPT;
+    const dailyReporterPrompt = DEFAULT_DAILY_REPORTER_SYSTEM_PROMPT;
 
     const defaultAgents: AgentConfig[] = [
       {

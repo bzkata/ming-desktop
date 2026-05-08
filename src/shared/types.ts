@@ -1,29 +1,3 @@
-// 插件相关类型
-export interface Plugin {
-  id: string;
-  name: string;
-  version: string;
-  description: string;
-  author: string;
-  icon?: string;
-  category: string;
-  entry: string;
-  configSchema?: any;
-  enabled: boolean;
-}
-
-export interface PluginConfig {
-  pluginId: string;
-  config: Record<string, any>;
-}
-
-export interface PluginExecutionResult {
-  success: boolean;
-  data?: any;
-  error?: string;
-  logs?: string[];
-}
-
 // Agent 相关类型
 export interface Agent {
   id: string;
@@ -87,13 +61,6 @@ export interface AppConfig {
   workPaths: string[];
   /** 日报 Markdown 模板，占位符：{date} {total_commits} {total_repos} {work_hours} {commit_details} {stats} {generated_at} */
   dailyReportTemplate?: string;
-  /** Daily Reporter Agent 的系统提示词 */
-  dailyReporterSystemPrompt?: string;
-  /** 日报生成使用的 LLM Provider ID */
-  dailyReportProvider?: string;
-  /** 日报生成使用的模型名称 */
-  dailyReportModel?: string;
-  plugins: Record<string, PluginConfig>;
   agents: Agent[];
   llmProviders: LLMProvider[];
 }
