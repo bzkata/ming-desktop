@@ -95,6 +95,14 @@ function setupIPCHandlers(): void {
     return agentManager.listAgents();
   });
 
+  ipcMain.handle(IPCChannels.AGENT_UPDATE, async (_, agentId: string, updates: any) => {
+    return agentManager.updateAgent(agentId, updates);
+  });
+
+  ipcMain.handle(IPCChannels.AGENT_DELETE, async (_, agentId: string) => {
+    return agentManager.deleteAgent(agentId);
+  });
+
   // Conversation 相关
   ipcMain.handle(IPCChannels.CONVERSATION_CREATE, async () => {
     return agentManager.createConversation();

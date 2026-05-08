@@ -9,6 +9,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     chat: (agentId: string, message: string) =>
       ipcRenderer.invoke(IPCChannels.AGENT_CHAT, agentId, message),
     list: () => ipcRenderer.invoke(IPCChannels.AGENT_LIST),
+    update: (agentId: string, updates: any) =>
+      ipcRenderer.invoke(IPCChannels.AGENT_UPDATE, agentId, updates),
+    delete: (agentId: string) =>
+      ipcRenderer.invoke(IPCChannels.AGENT_DELETE, agentId),
   },
 
   // Conversation API
@@ -99,6 +103,8 @@ export interface ElectronAPI {
     create: (config: any) => Promise<string>;
     chat: (agentId: string, message: string) => Promise<string>;
     list: () => Promise<any[]>;
+    update: (agentId: string, updates: any) => Promise<void>;
+    delete: (agentId: string) => Promise<void>;
   };
   conversations: {
     create: () => Promise<any>;

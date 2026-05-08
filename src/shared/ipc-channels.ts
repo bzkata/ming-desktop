@@ -5,6 +5,7 @@ export enum IPCChannels {
   AGENT_CHAT = 'agent:chat',
   AGENT_LIST = 'agent:list',
   AGENT_DELETE = 'agent:delete',
+  AGENT_UPDATE = 'agent:update',
 
   // LLM Provider 相关
   LLM_LIST_PROVIDERS = 'llm:list-providers',

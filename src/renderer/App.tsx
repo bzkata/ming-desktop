@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, createContext, useContext } from 'rea
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import AgentChat from './components/AgentChat';
+import AgentManager from './components/AgentManager';
 import Settings from './components/Settings';
 import { themePresets, defaultThemeName, applyThemePreset, type ThemePreset } from './lib/themes';
 
@@ -10,6 +11,8 @@ interface ElectronAPI {
     create: (config: any) => Promise<string>;
     chat: (agentId: string, message: string) => Promise<string>;
     list: () => Promise<any[]>;
+    update: (agentId: string, updates: any) => Promise<void>;
+    delete: (agentId: string) => Promise<void>;
   };
   llm: {
     listProviders: () => Promise<any[]>;
@@ -205,7 +208,8 @@ function App() {
           {/* Content */}
           <div className="flex-1 overflow-hidden">
             {activeTab === 'dashboard' && <Dashboard />}
-            {activeTab === 'agents' && <AgentChat />}
+            {activeTab === 'chat' && <AgentChat />}
+            {activeTab === 'agents' && <AgentManager />}
             {activeTab === 'settings' && <Settings />}
           </div>
         </div>
