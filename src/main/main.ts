@@ -16,6 +16,7 @@ import { migrateFromStore } from './database/migrate-from-store';
 let mainWindow: BrowserWindow | null = null;
 let agentManager: AgentManager;
 let llmManager: LLMProviderManager;
+let toolExecutor: ToolExecutor;
 let executorService: ExecutorService;
 let configManager: ConfigManager;
 
@@ -71,7 +72,7 @@ async function initializeServices(): Promise<void> {
   await executorService.initialize();
 
   // 初始化 Tool Executor
-  const toolExecutor = new ToolExecutor();
+  toolExecutor = new ToolExecutor();
   toolExecutor.register(createDailyReportTool(configManager, executorService));
 
   // 初始化 Agent 管理器
@@ -223,6 +224,12 @@ function setupIPCHandlers(): void {
       seen.add(r.path);
       return true;
     });
+  });
+
+  // Daily Report - 调用 daily-report tool 收集 Git 提交数据
+  ipcMain.handle(IPCChannels.DAILY_REPORT_FETCH, async (_, params: any) => {
+    const result = await toolExecutor.executeByName('daily-report', params || {});
+    return JSON.parse(result); // tool 返回 JSON 字符串，解析成对象
   });
 
   Logger.info('IPC handlers registered');

@@ -95,6 +95,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   git: {
     scanRepos: () => ipcRenderer.invoke(IPCChannels.GIT_SCAN_REPOS),
   },
+
+  // Daily Report API
+  dailyReport: {
+    fetch: (params: any) => ipcRenderer.invoke(IPCChannels.DAILY_REPORT_FETCH, params),
+  },
 });
 
 // 类型定义
@@ -139,5 +144,11 @@ export interface ElectronAPI {
   };
   debug: {
     onModelCall: (callback: (data: any) => void) => () => void;
+  };
+  git: {
+    scanRepos: () => Promise<{ name: string; path: string }[]>;
+  };
+  dailyReport: {
+    fetch: (params: any) => Promise<any>;
   };
 }

@@ -51,6 +51,9 @@ interface ElectronAPI {
   debug: {
     onModelCall: (callback: (data: any) => void) => () => void;
   };
+  dailyReport: {
+    fetch: (params: any) => Promise<any>;
+  };
 }
 
 declare global {

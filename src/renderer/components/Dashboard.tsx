@@ -46,7 +46,6 @@ export default function Dashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [gitRepos, setGitRepos] = useState<GitRepo[]>([]);
   const [activeSheet, setActiveSheet] = useState<'commits' | 'repos' | 'report' | null>(null);
-  const [activeRepoNames, setActiveRepoNames] = useState<Set<string>>(new Set());
   const [onlyMine, setOnlyMine] = useState(false);
   const [reportContent, setReportContent] = useState('');
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
@@ -123,22 +122,23 @@ export default function Dashboard() {
   const fetchStats = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      const paths = await window.electronAPI.config.get('workPaths');
-      const repoPaths = Array.isArray(paths) && paths.length > 0
-        ? paths.filter((p: string) => Boolean(p?.trim()))
-        : [];
+      const params = buildReportParams();
+      const result = await window.electronAPI.dailyReport.fetch(params);
 
-      if (repoPaths.length === 0) {
-        setStats({ totalCommits: 0, totalRepos: 0, workHours: 0 });
-        setActiveRepoNames(new Set());
-        return;
-      }
+      const commitList = result.commits || [];
+      setCommits(commitList);
 
-      // TODO: Migrate to agent-based daily report generation via conversation API
-      // The daily-report functionality is now available as a tool in the Agent system
-      setReportContent(''); // reset until agent-based generation is wired up
-    } catch {
-      // silently fail
+      // Calculate stats
+      const reposWithCommits = new Set(commitList.map((c: CommitInfo) => c.repo));
+      setStats({
+        totalCommits: commitList.length,
+        totalRepos: reposWithCommits.size,
+        workHours: 0, // TODO: calculate from commit timestamps
+      });
+    } catch (error) {
+      console.error('Failed to fetch stats:', error);
+      setCommits([]);
+      setStats({ totalCommits: 0, totalRepos: 0, workHours: 0 });
     } finally {
       setIsRefreshing(false);
     }
@@ -153,20 +153,33 @@ export default function Dashboard() {
   const handleGenerateReport = async () => {
     setIsGenerating(true);
     try {
-      const paths = await window.electronAPI.config.get('workPaths');
-      const repoPaths = Array.isArray(paths) && paths.length > 0
-        ? paths.filter((p: string) => Boolean(p?.trim()))
-        : [];
+      const params = buildReportParams();
+      const result = await window.electronAPI.dailyReport.fetch(params);
 
-      if (repoPaths.length === 0) {
-        setCommits([]);
-        return;
+      const commitList = result.commits || [];
+      setCommits(commitList);
+
+      // Generate report content using commits data
+      // TODO: Use Agent chat to generate markdown report
+      const byRepo: Record<string, CommitInfo[]> = {};
+      for (const c of commitList) {
+        if (!byRepo[c.repo]) byRepo[c.repo] = [];
+        byRepo[c.repo].push(c);
       }
 
-      // TODO: Migrate to agent-based daily report generation via conversation API
-      // The daily-report functionality is now available as a tool in the Agent system
-    } catch {
-      // silently fail
+      let report = `# 工作日报 - ${format(new Date(), 'yyyy年MM月dd日')}\n\n`;
+      for (const [repo, repoCommits] of Object.entries(byRepo)) {
+        report += `## ${repo}\n\n`;
+        for (const c of repoCommits) {
+          report += `- ${c.message}\n`;
+        }
+        report += '\n';
+      }
+      setReportContent(report);
+    } catch (error) {
+      console.error('Failed to generate report:', error);
+      setCommits([]);
+      setReportContent('');
     } finally {
       setIsGenerating(false);
     }
@@ -346,7 +359,7 @@ export default function Dashboard() {
                 <div className="p-3 rounded-lg bg-emerald-500/10">
                   <FileText size={24} className="text-emerald-500" />
                 </div>
-                <span className="text-sm text-muted-foreground">{activeRepoNames.size} active</span>
+                <span className="text-sm text-muted-foreground">{stats.totalRepos} active</span>
               </div>
               <div className="text-3xl font-bold mb-1 text-foreground">{gitRepos.length}</div>
               <div className="text-sm text-muted-foreground">Git Repositories</div>

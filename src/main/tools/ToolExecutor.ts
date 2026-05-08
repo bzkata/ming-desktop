@@ -36,4 +36,13 @@ export class ToolExecutor {
     Logger.info(`Executing tool: ${toolCall.function.name}`, params);
     return entry.handler(params);
   }
+
+  async executeByName(name: string, params: Record<string, any>): Promise<string> {
+    const entry = this.tools.get(name);
+    if (!entry) {
+      throw new Error(`Unknown tool: ${name}`);
+    }
+    Logger.info(`Executing tool: ${name}`, params);
+    return entry.handler(params);
+  }
 }
