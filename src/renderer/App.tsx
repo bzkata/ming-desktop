@@ -4,6 +4,7 @@ import Dashboard from './components/Dashboard';
 import PluginManager from './components/PluginManager';
 import AgentChat from './components/AgentChat';
 import Settings from './components/Settings';
+import { WelcomePage } from './components/WelcomePage';
 import { themePresets, defaultThemeName, applyThemePreset, type ThemePreset } from './lib/themes';
 
 interface ElectronAPI {
@@ -134,6 +135,22 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [showWelcome, setShowWelcome] = useState(true);
+
+  // Check if onboarding completed
+  useEffect(() => {
+    const checkOnboarding = async () => {
+      try {
+        const completed = await window.electronAPI?.config.get('hasCompletedOnboarding');
+        if (completed) {
+          setShowWelcome(false);
+        }
+      } catch (e) {
+        // First time or no config
+      }
+    };
+    checkOnboarding();
+  }, []);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -154,6 +171,15 @@ function App() {
 
     return () => window.clearTimeout(timeoutId);
   }, []);
+
+  const handleWelcomeComplete = async () => {
+    try {
+      await window.electronAPI?.config.set('hasCompletedOnboarding', true);
+    } catch (e) {
+      localStorage.setItem('hasCompletedOnboarding', 'true');
+    }
+    setShowWelcome(false);
+  };
 
   if (isLoading) {
     return (
@@ -184,22 +210,22 @@ function App() {
   return (
     <ThemeProvider>
       <div className="flex h-screen bg-background">
-        {/* Sidebar */}
-        <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
+        {!showWelcome && (
+          <>
+            <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="drag-region flex-shrink-0 h-8 bg-secondary" />
+              <div className="flex-1 overflow-hidden">
+                {activeTab === 'dashboard' && <Dashboard />}
+                {activeTab === 'plugins' && <PluginManager />}
+                {activeTab === 'agents' && <AgentChat />}
+                {activeTab === 'settings' && <Settings />}
+              </div>
+            </div>
+          </>
+        )}
 
-        {/* Main content with drag bar */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* macOS drag bar */}
-          <div className="drag-region flex-shrink-0 h-8 bg-secondary" />
-
-          {/* Content */}
-          <div className="flex-1 overflow-hidden">
-            {activeTab === 'dashboard' && <Dashboard />}
-            {activeTab === 'plugins' && <PluginManager />}
-            {activeTab === 'agents' && <AgentChat />}
-            {activeTab === 'settings' && <Settings />}
-          </div>
-        </div>
+        {showWelcome && <WelcomePage onComplete={handleWelcomeComplete} />}
       </div>
     </ThemeProvider>
   );
