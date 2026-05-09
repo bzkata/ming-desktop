@@ -1,4 +1,5 @@
-import { LayoutDashboard, MessageSquare, Bot, Settings, Sun, Moon, Monitor, Home, Search } from 'lucide-react';
+import { useState } from 'react';
+import { LayoutDashboard, MessageSquare, Bot, Settings, Sun, Moon, Monitor, Home, Search, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { useTheme } from '../App';
 import { Button } from './ui/button';
 import { Separator } from './ui/separator';
@@ -7,10 +8,15 @@ import { cn } from '@/lib/utils';
 interface SidebarProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
+  collapsed?: boolean;
+  onCollapsedChange?: (collapsed: boolean) => void;
 }
 
-export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
+export default function Sidebar({ activeTab, onTabChange, collapsed: controlledCollapsed, onCollapsedChange }: SidebarProps) {
   const { theme, setTheme } = useTheme();
+  const [internalCollapsed, setInternalCollapsed] = useState(false);
+  const collapsed = controlledCollapsed !== undefined ? controlledCollapsed : internalCollapsed;
+  const setCollapsed = onCollapsedChange || setInternalCollapsed;
 
   const menuItems = [
     { id: 'welcome', label: 'Welcome', icon: Home },
@@ -27,25 +33,27 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
   };
 
   return (
-    <div className="w-64 flex flex-col bg-secondary border-r">
+    <div className={cn('flex flex-col bg-secondary border-r transition-all duration-300', collapsed ? 'w-16' : 'w-64')}>
       {/* macOS drag bar */}
       <div className="drag-region flex-shrink-0 h-8" />
       {/* Logo */}
-      <div className="p-6 pt-2">
-        <div className="flex items-center gap-3">
+      <div className={cn('pt-2', collapsed ? 'p-3' : 'p-6')}>
+        <div className={cn('flex items-center', collapsed ? 'flex-col gap-2' : 'gap-3')}>
           <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-lg bg-primary">
             銘
           </div>
-          <div>
-            <h1 className="text-lg font-bold text-foreground">銘</h1>
-            <p className="text-xs text-muted-foreground">Desktop Client</p>
-          </div>
+          {!collapsed && (
+            <div>
+              <h1 className="text-lg font-bold text-foreground">銘</h1>
+              <p className="text-xs text-muted-foreground">Desktop Client</p>
+            </div>
+          )}
         </div>
         <Separator className="mt-6" />
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-2">
+      <nav className={cn('flex-1 space-y-2', collapsed ? 'p-2' : 'p-4')}>
         {menuItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
@@ -55,32 +63,45 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
               key={item.id}
               variant={isActive ? 'secondary' : 'ghost'}
               className={cn(
-                'w-full justify-start gap-3 px-4 py-3 h-auto',
+                'w-full justify-start gap-3 h-auto',
+                collapsed ? 'px-0 py-3 flex-col' : 'px-4 py-3',
                 isActive && 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
               )}
               onClick={() => onTabChange(item.id)}
+              title={collapsed ? item.label : undefined}
             >
               <Icon size={20} />
-              <span className="font-medium">{item.label}</span>
+              {!collapsed && <span className="font-medium">{item.label}</span>}
             </Button>
           );
         })}
       </nav>
 
-      {/* Footer with theme toggle */}
-      <div className="p-4">
-        <Separator className="mb-4" />
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">銘 v0.1.0</span>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={cycleTheme}
-            title={`Theme: ${theme}`}
-          >
-            {theme === 'light' ? <Sun size={16} /> : theme === 'dark' ? <Moon size={16} /> : <Monitor size={16} />}
-          </Button>
+      {/* Footer with theme toggle and collapse */}
+      <div className={cn('border-t', collapsed ? 'p-2' : 'p-4')}>
+        {!collapsed && <Separator className="mb-4" />}
+        <div className={cn('flex items-center', collapsed ? 'flex-col gap-2' : 'justify-between')}>
+          {!collapsed && <span className="text-xs text-muted-foreground">銘 v0.1.0</span>}
+          <div className={cn('flex items-center', collapsed ? 'flex-col gap-2' : 'gap-1')}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={cycleTheme}
+              title={`Theme: ${theme}`}
+            >
+              {theme === 'light' ? <Sun size={16} /> : theme === 'dark' ? <Moon size={16} /> : <Monitor size={16} />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setCollapsed(!collapsed)}
+              title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {collapsed ? <PanelLeft size={16} /> : <PanelLeftClose size={16} />}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

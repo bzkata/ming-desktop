@@ -273,6 +273,9 @@ interface AppAnalysisResult {
   frameworks: FrameworkDetection[];
   resources: { type: string; count: number };
   fileType: string;
+  categorizedDependencies?: Record<string, string[]>;
+  plistInfo?: Record<string, any>;
+  runtimeProcesses?: string[];
 }
 
 interface ProjectAnalysisResult {
@@ -281,6 +284,7 @@ interface ProjectAnalysisResult {
   buildTools: string[];
   packageManagers: string[];
   dependencies: { manager: string; count: number };
+  categorizedDependencies: Record<string, string[]>;
 }
 
 function execAsync(cmd: string): Promise<string> {
@@ -340,19 +344,40 @@ async function analyzeMacApp(appPath: string, result: AppAnalysisResult) {
   const contents = path.join(appPath, 'Contents');
   if (!fs.existsSync(contents)) return;
 
+  const categorizedDeps: Record<string, Set<string>> = {};
+
   // Read Info.plist for app name, version, bundle ID
   const plistPath = path.join(contents, 'Info.plist');
+  const plistInfo: Record<string, any> = {};
   if (fs.existsSync(plistPath)) {
     try {
       const plistContent = fs.readFileSync(plistPath, 'utf-8');
       const nameMatch = plistContent.match(/<key>CFBundleName<\/key>\s*<string>(.*?)<\/string>/);
+      const displayNameMatch = plistContent.match(/<key>CFBundleDisplayName<\/key>\s*<string>(.*?)<\/string>/);
       const versionMatch = plistContent.match(/<key>CFBundleShortVersionString<\/key>\s*<string>(.*?)<\/string>/);
       const bundleMatch = plistContent.match(/<key>CFBundleIdentifier<\/key>\s*<string>(.*?)<\/string>/);
+      const minOSMatch = plistContent.match(/<key>LSMinimumSystemVersion<\/key>\s*<string>(.*?)<\/string>/);
+      const categoryMatch = plistContent.match(/<key>LSApplicationCategoryType<\/key>\s*<string>(.*?)<\/string>/);
+      const principalClassMatch = plistContent.match(/<key>NSPrincipalClass<\/key>\s*<string>(.*?)<\/string>/);
+
       if (nameMatch) result.appName = nameMatch[1];
+      if (displayNameMatch) plistInfo.displayName = displayNameMatch[1];
       if (versionMatch) result.version = versionMatch[1];
       if (bundleMatch) result.bundleId = bundleMatch[1];
+      if (minOSMatch) plistInfo.minOSVersion = minOSMatch[1];
+      if (categoryMatch) plistInfo.category = categoryMatch[1].replace('public.app-category.', '');
+      if (principalClassMatch) plistInfo.principalClass = principalClassMatch[1];
+
+      // Check for Electron-specific plist entries
+      if (plistContent.includes('ElectronAsarIntegrity')) {
+        plistInfo.electronAsarIntegrity = true;
+      }
+      if (plistContent.includes('NSPrincipalClass') && principalClassMatch?.[1] === 'AtomApplication') {
+        plistInfo.atomBased = true;
+      }
     } catch { /* skip */ }
   }
+  result.plistInfo = plistInfo;
 
   const frameworksDir = path.join(contents, 'Frameworks');
   const resourcesDir = path.join(contents, 'Resources');
@@ -417,6 +442,17 @@ async function analyzeMacApp(appPath: string, result: AppAnalysisResult) {
     detections.push({ name: 'Unity', confidence: 'high', evidence: ['Unity engine detected'] });
   }
 
+  // Detect native macOS frameworks
+  const nativeFrameworks = ['Mantle.framework', 'ReactiveObjC.framework', 'Squirrel.framework', 'Cocoa.framework', 'SwiftUI.framework'];
+  for (const fw of nativeFrameworks) {
+    if (fs.existsSync(path.join(frameworksDir, fw))) {
+      const fwName = fw.replace('.framework', '');
+      if (!detections.find(d => d.name === fwName)) {
+        detections.push({ name: fwName, confidence: 'medium', evidence: [`${fw} detected`] });
+      }
+    }
+  }
+
   // If no specific framework found, it's likely native (SwiftUI/AppKit)
   if (detections.length === 0) {
     detections.push({ name: 'Native (AppKit/SwiftUI)', confidence: 'medium', evidence: ['No cross-platform framework detected'] });
@@ -434,6 +470,97 @@ async function analyzeMacApp(appPath: string, result: AppAnalysisResult) {
       result.resources = { type: `${jsFiles} JS, ${htmlFiles} HTML, ${imgFiles} images`, count: resourceFiles.length };
     } catch { /* skip */ }
   }
+
+  // Analyze asar file for dependencies (Electron apps)
+  const asarPath = path.join(resourcesDir, 'app.asar');
+  if (fs.existsSync(asarPath)) {
+    try {
+      // Use strings to extract package names from asar
+      const stringsOutput = execSync(`strings "${asarPath}" 2>/dev/null | grep -E '"name": "[a-z@][a-z0-9@/-]*"' | sort -u`, { encoding: 'utf-8', timeout: 10000 });
+      const packageNames = stringsOutput.match(/"name": "([^"]+)"/g)?.map(m => m.replace(/"name": "/, '').replace(/"/, '')) || [];
+
+      // Categorize detected packages
+      const categories: Record<string, string[]> = {
+        'UI 框架': ['react', 'react-dom', 'vue', '@angular/core', 'svelte', 'solid-js', 'preact'],
+        'UI 组件库': ['@mui/material', '@chakra-ui/react', 'antd', '@radix-ui', 'shadcn', 'daisyui', 'element-plus', 'vant', 'vuetify', 'quasar', '@assistant-ui/react', '@diceui/shared'],
+        '状态管理': ['zustand', 'redux', '@reduxjs/toolkit', 'mobx', 'recoil', 'jotai', 'pinia', 'vuex'],
+        '路由': ['react-router-dom', '@tanstack/router', 'vue-router', 'next', 'nuxt', 'remix', 'gatsby'],
+        'AI/LLM': ['openai', '@anthropic-ai/sdk', '@anthropic-ai/claude-agent-sdk', '@modelcontextprotocol/sdk', '@agentclientprotocol/sdk', '@assistant-ui/react', 'langchain'],
+        'HTTP 客户端': ['axios', 'got', 'node-fetch', 'ky', 'superagent', 'undici', '@better-fetch/fetch'],
+        '数据库 ORM': ['prisma', '@prisma/client', 'drizzle-orm', 'typeorm', 'sequelize', 'mongoose', 'knex', 'redis', 'ioredis', '@electric-sql/pglite'],
+        '认证授权': ['jsonwebtoken', 'passport', 'bcrypt', 'oauth', 'next-auth', '@clerk', 'better-auth'],
+        '样式方案': ['tailwindcss', 'styled-components', '@emotion', 'sass', 'less', 'postcss', 'css-modules'],
+        '测试工具': ['jest', 'vitest', 'mocha', 'cypress', 'playwright', '@testing-library', 'sinon', 'chai', 'supertest'],
+        '构建工具': ['webpack', 'vite', 'esbuild', 'rollup', '@babel/core', 'swc', 'parcel', 'turbopack'],
+        '代码质量': ['eslint', 'prettier', 'stylelint', 'husky', 'lint-staged', 'commitlint'],
+        '类型检查': ['typescript', 'zod', 'joi', 'yup', 'class-validator', 'io-ts', 'ajv'],
+        '日期处理': ['dayjs', 'moment', 'date-fns', 'luxon', 'temporal'],
+        '国际化': ['i18next', 'vue-i18n', 'react-intl', '@formatjs', 'next-intl', 'react-i18next'],
+        '图表可视化': ['echarts', 'chart.js', 'd3', 'recharts', '@visx', 'antv', 'plotly'],
+        '动画库': ['framer-motion', 'gsap', 'lottie', 'animejs', '@react-spring'],
+        '文件处理': ['multer', 'sharp', 'pdf-lib', 'xlsx', 'file-saver', 'jszip'],
+        '日志工具': ['winston', 'pino', 'bunyan', 'log4js', 'debug'],
+        'WebSocket': ['socket.io', 'ws', 'graphql-ws', 'ably', 'pusher'],
+        '桌面开发': ['electron', '@tauri-apps/api', '@tauri-apps/cli', '@electron-toolkit'],
+        '移动开发': ['react-native', '@react-native', 'expo', 'capacitor', '@capacitor', 'ionic'],
+        '协作/CRDT': ['@loro-dev', 'yjs', 'automerge'],
+        '浮层/弹出': ['@floating-ui', 'tippy.js', 'popper'],
+        '拖放': ['@dnd-kit', 'react-dnd', 'react-beautiful-dnd'],
+      };
+
+      for (const pkg of packageNames) {
+        for (const [category, keywords] of Object.entries(categories)) {
+          if (keywords.some(k => pkg === k || pkg.startsWith(k + '/') || pkg.startsWith('@' + k.split('/')[0]?.replace('@', '') + '/'))) {
+            if (!categorizedDeps[category]) categorizedDeps[category] = new Set();
+            categorizedDeps[category].add(pkg);
+          }
+        }
+      }
+    } catch { /* skip asar analysis */ }
+  }
+
+  // Analyze node_modules if available
+  const nodeModulesPath = path.join(resourcesDir, 'app.asar.unpacked', 'node_modules');
+  if (fs.existsSync(nodeModulesPath)) {
+    try {
+      const modules = fs.readdirSync(nodeModulesPath).filter(d => !d.startsWith('.'));
+      for (const mod of modules) {
+        // Categorize module
+        const categories: Record<string, string[]> = {
+          '原生模块': ['cpu-features', 'ssh2', 'better-sqlite3', 'sharp', 'canvas'],
+        };
+        for (const [category, keywords] of Object.entries(categories)) {
+          if (keywords.includes(mod)) {
+            if (!categorizedDeps[category]) categorizedDeps[category] = new Set();
+            categorizedDeps[category].add(mod);
+          }
+        }
+      }
+      if (modules.length > 0) {
+        if (!categorizedDeps['原生模块']) categorizedDeps['原生模块'] = new Set();
+        modules.forEach(m => categorizedDeps['原生模块'].add(m));
+      }
+    } catch { /* skip */ }
+  }
+
+  // Convert sets to arrays
+  result.categorizedDependencies = Object.fromEntries(
+    Object.entries(categorizedDeps).map(([k, v]) => [k, Array.from(v)])
+  );
+
+  // Check for running processes (if app is currently running)
+  try {
+    const bundleId = result.bundleId;
+    if (bundleId) {
+      const psOutput = execSync(`ps aux | grep -i "${bundleId}" | grep -v grep | head -5`, { encoding: 'utf-8', timeout: 3000 });
+      if (psOutput.trim()) {
+        result.runtimeProcesses = psOutput.trim().split('\n').map(line => {
+          const parts = line.split(/\s+/);
+          return parts.slice(10).join(' ');
+        });
+      }
+    }
+  } catch { /* skip process check */ }
 }
 
 async function analyzeProjectDir(dirPath: string): Promise<ProjectAnalysisResult> {
@@ -443,6 +570,7 @@ async function analyzeProjectDir(dirPath: string): Promise<ProjectAnalysisResult
     buildTools: [],
     packageManagers: [],
     dependencies: { manager: '', count: 0 },
+    categorizedDependencies: {},
   };
 
   // Detect languages by file extension count
@@ -504,6 +632,43 @@ async function analyzeProjectDir(dirPath: string): Promise<ProjectAnalysisResult
   const packageManagers = new Set<string>();
   let depCount = 0;
   let depManager = '';
+  const categorizedDeps: Record<string, Set<string>> = {};
+
+  // Dependency categorization helper
+  function categorizeDeps(deps: Record<string, any>) {
+    const categories: Record<string, string[]> = {
+      'UI 框架': ['react', 'react-dom', 'vue', '@angular/core', 'svelte', 'solid-js', 'preact'],
+      'UI 组件库': ['@mui/material', '@chakra-ui/react', 'antd', '@radix-ui', 'shadcn', 'daisyui', 'element-plus', 'vant', 'vuetify', 'quasar'],
+      '状态管理': ['zustand', 'redux', '@reduxjs/toolkit', 'mobx', 'recoil', 'jotai', 'pinia', 'vuex'],
+      '路由': ['react-router-dom', '@tanstack/router', 'vue-router', 'next', 'nuxt', 'remix', 'gatsby'],
+      'HTTP 客户端': ['axios', 'got', 'node-fetch', 'ky', 'superagent', 'undici'],
+      '数据库 ORM': ['prisma', 'drizzle-orm', 'typeorm', 'sequelize', 'mongoose', 'knex', 'redis', 'ioredis'],
+      '样式方案': ['tailwindcss', 'styled-components', '@emotion', 'sass', 'less', 'postcss', 'css-modules'],
+      '测试工具': ['jest', 'vitest', 'mocha', 'cypress', 'playwright', '@testing-library', 'sinon', 'chai', 'supertest'],
+      '构建工具': ['webpack', 'vite', 'esbuild', 'rollup', '@babel/core', 'swc', 'parcel', 'turbopack'],
+      '代码质量': ['eslint', 'prettier', 'stylelint', 'husky', 'lint-staged', 'commitlint'],
+      '类型检查': ['typescript', 'zod', 'joi', 'yup', 'class-validator', 'io-ts', 'ajv'],
+      '日期处理': ['dayjs', 'moment', 'date-fns', 'luxon', 'temporal'],
+      '国际化': ['i18next', 'vue-i18n', 'react-intl', '@formatjs', 'next-intl'],
+      '图表可视化': ['echarts', 'chart.js', 'd3', 'recharts', '@visx', 'antv', 'plotly'],
+      '动画库': ['framer-motion', 'gsap', 'lottie', 'animejs', '@react-spring'],
+      '文件处理': ['multer', 'sharp', 'pdf-lib', 'xlsx', 'file-saver', 'jszip'],
+      '日志工具': ['winston', 'pino', 'bunyan', 'log4js', 'debug'],
+      '认证授权': ['jsonwebtoken', 'passport', 'bcrypt', 'oauth', 'next-auth', '@clerk'],
+      'WebSocket': ['socket.io', 'ws', 'graphql-ws', 'ably', 'pusher'],
+      '桌面开发': ['electron', '@tauri-apps/api', '@tauri-apps/cli'],
+      '移动开发': ['react-native', '@react-native', 'expo', 'capacitor', 'ionic'],
+    };
+
+    for (const [depName, _version] of Object.entries(deps)) {
+      for (const [category, keywords] of Object.entries(categories)) {
+        if (keywords.some(k => depName === k || depName.startsWith(k + '/') || depName.startsWith('@' + k.split('/')[0]?.replace('@', '') + '/'))) {
+          if (!categorizedDeps[category]) categorizedDeps[category] = new Set();
+          categorizedDeps[category].add(depName);
+        }
+      }
+    }
+  }
 
   // package.json
   const pkgPath = path.join(dirPath, 'package.json');
@@ -513,6 +678,9 @@ async function analyzeProjectDir(dirPath: string): Promise<ProjectAnalysisResult
       const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
       depCount = Object.keys(allDeps).length;
       depManager = 'npm';
+
+      // Categorize dependencies
+      categorizeDeps(allDeps);
 
       // Detect frameworks
       if (allDeps['react'] || allDeps['react-dom']) frameworks.add('React');
@@ -630,6 +798,9 @@ async function analyzeProjectDir(dirPath: string): Promise<ProjectAnalysisResult
   result.buildTools = Array.from(buildTools);
   result.packageManagers = Array.from(packageManagers);
   result.dependencies = { manager: depManager, count: depCount };
+  result.categorizedDependencies = Object.fromEntries(
+    Object.entries(categorizedDeps).map(([k, v]) => [k, Array.from(v)])
+  );
 
   return result;
 }

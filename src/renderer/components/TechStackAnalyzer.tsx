@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { PackageOpen, FolderSearch, Loader2, Upload, FileCode, Layers, Cpu, Wrench, Box } from 'lucide-react';
+import { PackageOpen, FolderSearch, Loader2, Upload, FileCode, Layers, Cpu, Wrench, Box, Layers3, Info, Activity } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Badge } from './ui/badge';
@@ -19,6 +19,9 @@ interface AppAnalysisResult {
   frameworks: FrameworkDetection[];
   resources: { type: string; count: number };
   fileType: string;
+  categorizedDependencies?: Record<string, string[]>;
+  plistInfo?: Record<string, any>;
+  runtimeProcesses?: string[];
 }
 
 interface ProjectAnalysisResult {
@@ -27,6 +30,7 @@ interface ProjectAnalysisResult {
   buildTools: string[];
   packageManagers: string[];
   dependencies: { manager: string; count: number };
+  categorizedDependencies: Record<string, string[]>;
 }
 
 const LANG_COLORS: Record<string, string> = {
@@ -59,6 +63,19 @@ function AppResult({ result }: { result: AppAnalysisResult }) {
             <div className="text-sm text-muted-foreground">Bundle ID: {result.bundleId}</div>
           )}
           <div className="text-sm text-muted-foreground">File type: {result.fileType}</div>
+          {result.plistInfo && Object.keys(result.plistInfo).length > 0 && (
+            <div className="mt-3 pt-3 border-t space-y-1.5">
+              {result.plistInfo.category && (
+                <div className="text-sm"><span className="text-muted-foreground">Category:</span> {result.plistInfo.category}</div>
+              )}
+              {result.plistInfo.minOSVersion && (
+                <div className="text-sm"><span className="text-muted-foreground">Min OS:</span> macOS {result.plistInfo.minOSVersion}</div>
+              )}
+              {result.plistInfo.electronAsarIntegrity && (
+                <div className="text-sm text-muted-foreground">Electron Asar Integrity: Enabled</div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -102,6 +119,54 @@ function AppResult({ result }: { result: AppAnalysisResult }) {
           <CardContent>
             <div className="text-sm">{result.resources.type}</div>
             <div className="text-xs text-muted-foreground mt-1">{result.resources.count} total files</div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Categorized Dependencies */}
+      {result.categorizedDependencies && Object.keys(result.categorizedDependencies).length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Layers3 size={18} className="text-primary" />
+              技术栈分类
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4">
+              {Object.entries(result.categorizedDependencies).map(([category, deps]) => (
+                <div key={category} className="space-y-2">
+                  <div className="text-sm font-medium text-foreground">{category}</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {deps.slice(0, 8).map(dep => (
+                      <Badge key={dep} variant="outline" className="text-xs">{dep}</Badge>
+                    ))}
+                    {deps.length > 8 && (
+                      <Badge variant="secondary" className="text-xs">+{deps.length - 8} more</Badge>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Runtime Processes */}
+      {result.runtimeProcesses && result.runtimeProcesses.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Activity size={18} className="text-primary" />
+              Running Processes
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-1.5">
+              {result.runtimeProcesses.slice(0, 3).map((proc, i) => (
+                <div key={i} className="text-xs font-mono text-muted-foreground truncate">{proc}</div>
+              ))}
+            </div>
           </CardContent>
         </Card>
       )}
@@ -215,6 +280,32 @@ function ProjectResult({ result }: { result: ProjectAnalysisResult }) {
                 )}
               </div>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Categorized Dependencies */}
+      {Object.keys(result.categorizedDependencies).length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Layers3 size={18} className="text-primary" />
+              技术栈分类
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4">
+              {Object.entries(result.categorizedDependencies).map(([category, deps]) => (
+                <div key={category} className="space-y-2">
+                  <div className="text-sm font-medium text-foreground">{category}</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {deps.map(dep => (
+                      <Badge key={dep} variant="outline" className="text-xs">{dep}</Badge>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
       )}

@@ -84,7 +84,7 @@ function MessageBubble({ message }: { message: Message }) {
       </div>
       <div
         className={cn(
-          'max-w-2xl p-4 rounded-lg',
+          'max-w-[85%] p-4 rounded-lg',
           isUser ? 'bg-primary text-primary-foreground' : 'bg-muted'
         )}
       >
@@ -146,6 +146,8 @@ export default function AgentChat() {
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
   const [providers, setProviders] = useState<LLMProvider[]>([]);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [debugLogs, setDebugLogs] = useState<any[]>([]);
@@ -233,15 +235,27 @@ export default function AgentChat() {
   };
 
   const handleDeleteConversation = async (convId: string) => {
+    const conv = conversations.find(c => c.id === convId);
+    if (conv) {
+      setDeleteTarget(conv);
+      setDeleteDialogOpen(true);
+    }
+  };
+
+  const confirmDeleteConversation = async () => {
+    if (!deleteTarget) return;
     try {
-      await window.electronAPI.conversations.delete(convId);
-      setConversations(prev => prev.filter(c => c.id !== convId));
-      if (currentConversationId === convId) {
+      await window.electronAPI.conversations.delete(deleteTarget.id);
+      setConversations(prev => prev.filter(c => c.id !== deleteTarget.id));
+      if (currentConversationId === deleteTarget.id) {
         setCurrentConversationId(null);
         setMessages([]);
       }
     } catch (error) {
       console.error('Failed to delete conversation:', error);
+    } finally {
+      setDeleteDialogOpen(false);
+      setDeleteTarget(null);
     }
   };
 
@@ -428,37 +442,6 @@ export default function AgentChat() {
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              {selectedModel && (
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted text-xs text-muted-foreground">
-                  <Cpu size={12} />
-                  <select
-                    value={selectedModel}
-                    onChange={(e) => setSelectedModel(e.target.value)}
-                    className="bg-transparent border-none text-xs text-muted-foreground cursor-pointer focus:outline-none"
-                  >
-                    {providers.map((provider) =>
-                      (provider.enabledModels || []).map((model) => (
-                        <option key={`${provider.id}-${model}`} value={model}>
-                          {model}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </div>
-              )}
-              <select
-                value={selectedAgentId || ''}
-                onChange={(e) => setSelectedAgentId(e.target.value)}
-                className="text-sm border border-border rounded-md px-3 py-1.5 bg-background"
-              >
-                {agents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>
-                    {agent.name}
-                  </option>
-                ))}
-              </select>
-            </div>
           </div>
         </div>
         <Separator />
@@ -559,6 +542,36 @@ export default function AgentChat() {
           <>
             <Separator />
             <div className="p-4 bg-background">
+              {/* Model and Agent Selector - moved above input */}
+              <div className="flex items-center gap-2 mb-3">
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted text-xs text-muted-foreground">
+                  <Cpu size={12} />
+                  <select
+                    value={selectedModel || ''}
+                    onChange={(e) => setSelectedModel(e.target.value)}
+                    className="bg-transparent border-none text-xs text-muted-foreground cursor-pointer focus:outline-none"
+                  >
+                    {providers.map((provider) =>
+                      (provider.enabledModels || []).map((model) => (
+                        <option key={`${provider.id}-${model}`} value={model}>
+                          {model}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+                <select
+                  value={selectedAgentId || ''}
+                  onChange={(e) => setSelectedAgentId(e.target.value)}
+                  className="text-xs border border-border rounded-md px-2 py-1 bg-background text-muted-foreground"
+                >
+                  {agents.map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="flex gap-3">
                 <Input
                   type="text"
@@ -598,6 +611,22 @@ export default function AgentChat() {
           <DialogFooter>
             <Button variant="ghost" onClick={() => setRenameDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleRenameConversation}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Conversation</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Are you sure you want to delete "{deleteTarget?.title}"? This action cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={confirmDeleteConversation}>Delete</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
