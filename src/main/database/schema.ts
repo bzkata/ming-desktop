@@ -101,6 +101,24 @@ export function runMigrations(): void {
     db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(migration2Name);
   }
 
+  // Migration: add daily_reports table
+  const migrationReportsName = 'add-daily-reports';
+  const appliedReports = db.prepare('SELECT 1 FROM _migrations WHERE name = ?').get(migrationReportsName);
+  if (!appliedReports) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS daily_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        time_range TEXT NOT NULL DEFAULT 'today',
+        commits_count INTEGER DEFAULT 0,
+        repos_count INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+    db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(migrationReportsName);
+  }
+
   // Migration: add enabled_models to llm_providers
   const migration3Name = 'add-enabled-models';
   const applied3 = db.prepare('SELECT 1 FROM _migrations WHERE name = ?').get(migration3Name);

@@ -386,13 +386,18 @@ export default function AgentChat() {
                 )}
               >
                 <MessageSquare size={14} className="shrink-0 opacity-50" />
-                <span className="flex-1 truncate">{conv.title}</span>
+                <div className="flex-1 min-w-0">
+                  <span className="block text-sm leading-snug line-clamp-2">{conv.title}</span>
+                  <span className="block text-xs text-muted-foreground mt-0.5">
+                    {conv.updatedAt ? new Date(conv.updatedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+                  </span>
+                </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6 opacity-0 group-hover:opacity-100 shrink-0"
+                      className="h-6 w-6 shrink-0"
                       onClick={(e) => e.stopPropagation()}
                     >
                       ...

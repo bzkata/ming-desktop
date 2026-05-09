@@ -10,7 +10,7 @@ import { ConfigManager } from './services/ConfigManager';
 import { ToolExecutor } from './tools/ToolExecutor';
 import { createDailyReportTool } from './tools/dailyReportTool';
 import { Logger } from './utils/Logger';
-import { initializeDatabase, closeDatabase } from './database/connection';
+import { initializeDatabase, closeDatabase, getDatabase } from './database/connection';
 import { runMigrations } from './database/schema';
 import { migrateFromStore } from './database/migrate-from-store';
 
@@ -242,6 +242,30 @@ function setupIPCHandlers(): void {
   ipcMain.handle(IPCChannels.DAILY_REPORT_FETCH, async (_, params: any) => {
     const result = await toolExecutor.executeByName('daily-report', params || {});
     return JSON.parse(result); // tool 返回 JSON 字符串，解析成对象
+  });
+
+  // Daily Report - 保存日报记录
+  ipcMain.handle(IPCChannels.DAILY_REPORT_SAVE, async (_, report: { title: string; content: string; timeRange: string; commitsCount: number; reposCount: number }) => {
+    const db = getDatabase();
+    const stmt = db.prepare(
+      'INSERT INTO daily_reports (title, content, time_range, commits_count, repos_count) VALUES (?, ?, ?, ?, ?)'
+    );
+    const result = stmt.run(report.title, report.content, report.timeRange, report.commitsCount, report.reposCount);
+    return { id: result.lastInsertRowid };
+  });
+
+  // Daily Report - 获取日报列表
+  ipcMain.handle(IPCChannels.DAILY_REPORT_LIST, async () => {
+    const db = getDatabase();
+    const reports = db.prepare('SELECT * FROM daily_reports ORDER BY created_at DESC').all();
+    return reports;
+  });
+
+  // Daily Report - 删除日报
+  ipcMain.handle(IPCChannels.DAILY_REPORT_DELETE, async (_, id: number) => {
+    const db = getDatabase();
+    db.prepare('DELETE FROM daily_reports WHERE id = ?').run(id);
+    return { success: true };
   });
 
   // TechStack - 分析 DMG/App 安装包

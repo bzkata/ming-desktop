@@ -100,6 +100,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Daily Report API
   dailyReport: {
     fetch: (params: any) => ipcRenderer.invoke(IPCChannels.DAILY_REPORT_FETCH, params),
+    save: (report: { title: string; content: string; timeRange: string; commitsCount: number; reposCount: number }) =>
+      ipcRenderer.invoke(IPCChannels.DAILY_REPORT_SAVE, report),
+    list: () => ipcRenderer.invoke(IPCChannels.DAILY_REPORT_LIST),
+    delete: (id: number) => ipcRenderer.invoke(IPCChannels.DAILY_REPORT_DELETE, id),
   },
 
   // TechStack 分析 API
@@ -158,6 +162,9 @@ export interface ElectronAPI {
   };
   dailyReport: {
     fetch: (params: any) => Promise<any>;
+    save: (report: { title: string; content: string; timeRange: string; commitsCount: number; reposCount: number }) => Promise<{ id: number }>;
+    list: () => Promise<any[]>;
+    delete: (id: number) => Promise<{ success: boolean }>;
   };
   techStack: {
     analyzeApp: (filePath: string) => Promise<any>;

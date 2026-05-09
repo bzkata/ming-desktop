@@ -55,6 +55,9 @@ interface ElectronAPI {
   };
   dailyReport: {
     fetch: (params: any) => Promise<any>;
+    save: (report: { title: string; content: string; timeRange: string; commitsCount: number; reposCount: number }) => Promise<{ id: number }>;
+    list: () => Promise<any[]>;
+    delete: (id: number) => Promise<{ success: boolean }>;
   };
   techStack: {
     analyzeApp: (filePath: string) => Promise<any>;
@@ -218,7 +221,7 @@ function App() {
           <div className="flex-1 overflow-hidden">
             {activeTab === 'welcome' && <Welcome />}
             {activeTab === 'techstack' && <TechStackAnalyzer />}
-            {activeTab === 'dashboard' && <Dashboard />}
+            {activeTab === 'dashboard' && <Dashboard onNavigate={setActiveTab} />}
             {activeTab === 'chat' && <AgentChat />}
             {activeTab === 'agents' && <AgentManager />}
             {activeTab === 'settings' && <Settings />}

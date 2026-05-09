@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Calendar as CalendarIcon, GitBranch, FileText, TrendingUp, Play, RefreshCw, Folder, Activity, User, Plus, Minus, Copy, Check } from 'lucide-react';
+import { Calendar as CalendarIcon, GitBranch, FileText, TrendingUp, Play, RefreshCw, Folder, Activity, User, Plus, Minus, Copy, Check, Clock, Trash2, Bot, Settings, MessageSquare } from 'lucide-react';
 import { format } from 'date-fns';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -10,6 +10,8 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '.
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from './ui/sheet';
 import { Calendar } from './ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import { ScrollArea } from './ui/scroll-area';
+import { Separator } from './ui/separator';
 import { cn } from '@/lib/utils';
 
 interface GitRepo {
@@ -30,7 +32,28 @@ interface CommitInfo {
   branches: string;
 }
 
-export default function Dashboard() {
+interface DailyReportRecord {
+  id: number;
+  title: string;
+  content: string;
+  time_range: string;
+  commits_count: number;
+  repos_count: number;
+  created_at: string;
+}
+
+interface ActivityItem {
+  id: string;
+  type: 'report' | 'refresh' | 'navigate';
+  message: string;
+  time: Date;
+}
+
+interface DashboardProps {
+  onNavigate?: (tab: string) => void;
+}
+
+export default function Dashboard({ onNavigate }: DashboardProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [commits, setCommits] = useState<CommitInfo[]>([]);
   const [timeRange, setTimeRange] = useState<string>('today');
@@ -43,12 +66,22 @@ export default function Dashboard() {
   const [workPaths, setWorkPaths] = useState<string[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [gitRepos, setGitRepos] = useState<GitRepo[]>([]);
-  const [activeSheet, setActiveSheet] = useState<'commits' | 'repos' | 'report' | null>(null);
+  const [activeSheet, setActiveSheet] = useState<'commits' | 'repos' | 'report' | 'report-history' | null>(null);
   const [reportContent, setReportContent] = useState('');
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
   const [copiedReport, setCopiedReport] = useState(false);
   const [dailyReporterAgentId, setDailyReporterAgentId] = useState<string | null>(null);
   const [gitUser, setGitUser] = useState({ name: '', email: '' });
+  const [reportHistory, setReportHistory] = useState<DailyReportRecord[]>([]);
+  const [selectedReport, setSelectedReport] = useState<DailyReportRecord | null>(null);
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
+
+  const addActivity = useCallback((type: ActivityItem['type'], message: string) => {
+    setActivities(prev => [
+      { id: `${Date.now()}-${Math.random()}`, type, message, time: new Date() },
+      ...prev,
+    ].slice(0, 20));
+  }, []);
 
   // Sort repos by activity: repos with commits first (sorted by date desc), then repos without commits
   const sortedGitRepos = useMemo(() => {
@@ -93,10 +126,20 @@ export default function Dashboard() {
     }
   }, []);
 
+  const loadReportHistory = useCallback(async () => {
+    try {
+      const reports = await window.electronAPI.dailyReport.list();
+      setReportHistory(reports || []);
+    } catch {
+      setReportHistory([]);
+    }
+  }, []);
+
   useEffect(() => {
     loadWorkPaths();
     window.electronAPI.git.getUser().then(setGitUser).catch(() => {});
-  }, [loadWorkPaths]);
+    loadReportHistory();
+  }, [loadWorkPaths, loadReportHistory]);
 
   // Find Daily Reporter agent on mount
   useEffect(() => {
@@ -124,7 +167,6 @@ export default function Dashboard() {
       if (customSince) params.sinceDate = format(customSince, 'yyyy-MM-dd');
       if (customUntil) params.untilDate = format(customUntil, 'yyyy-MM-dd');
     }
-    console.log('[buildReportParams]', params);
     return params;
   }, [timeRange, customSince, customUntil]);
 
@@ -170,6 +212,7 @@ export default function Dashboard() {
     setIsGenerating(true);
     setReportContent('');
     setActiveSheet('report');
+    addActivity('refresh', '开始生成工作日报...');
 
     try {
       // Create a conversation for this report
@@ -197,11 +240,30 @@ export default function Dashboard() {
           setReportContent(prev => prev + data.content);
         }
       });
-      const unsubEnd = window.electronAPI.conversations.onStreamEnd(() => {
+      const unsubEnd = window.electronAPI.conversations.onStreamEnd(async (data) => {
         unsubChunk();
         unsubEnd();
         unsubError();
         setIsGenerating(false);
+
+        // Save the report to history
+        const fullContent = data?.fullContent || reportContent;
+        if (fullContent) {
+          const title = `${rangeLabel}工作日报 - ${format(new Date(), 'yyyy-MM-dd')}`;
+          try {
+            await window.electronAPI.dailyReport.save({
+              title,
+              content: fullContent,
+              timeRange,
+              commitsCount: stats.totalCommits,
+              reposCount: stats.totalRepos,
+            });
+            loadReportHistory();
+            addActivity('report', `日报已生成: ${title}`);
+          } catch (e) {
+            console.error('Failed to save report:', e);
+          }
+        }
       });
       const unsubError = window.electronAPI.conversations.onStreamError((data) => {
         unsubChunk();
@@ -209,6 +271,7 @@ export default function Dashboard() {
         unsubError();
         console.error('Report generation error:', data.error);
         setIsGenerating(false);
+        addActivity('report', `日报生成失败: ${data.error}`);
       });
 
       // Fire the chat — agent will call daily-report tool and format the response
@@ -216,6 +279,19 @@ export default function Dashboard() {
     } catch (error) {
       console.error('Failed to generate report:', error);
       setIsGenerating(false);
+    }
+  };
+
+  const handleDeleteReport = async (id: number) => {
+    try {
+      await window.electronAPI.dailyReport.delete(id);
+      setReportHistory(prev => prev.filter(r => r.id !== id));
+      if (selectedReport?.id === id) {
+        setSelectedReport(null);
+      }
+      addActivity('report', '日报已删除');
+    } catch (e) {
+      console.error('Failed to delete report:', e);
     }
   };
 
@@ -247,6 +323,14 @@ export default function Dashboard() {
       // silently fail
     }
   }, []);
+
+  const timeRangeLabels: Record<string, string> = {
+    today: '今天',
+    yesterday: '昨天',
+    day_before_yesterday: '前天',
+    week: '本周',
+    custom: '自定义',
+  };
 
   return (
     <div className="h-full overflow-y-auto p-8">
@@ -318,7 +402,7 @@ export default function Dashboard() {
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              onClick={fetchStats}
+              onClick={() => { fetchStats(); addActivity('refresh', '刷新统计数据'); }}
               disabled={isRefreshing}
               title="Refresh"
             >
@@ -326,6 +410,34 @@ export default function Dashboard() {
             </Button>
           </div>
         </div>
+
+        {/* User Info Card - First */}
+        {gitUser.name && (
+          <Card className="mb-6">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-lg bg-violet-500/10">
+                  <User size={28} className="text-violet-500" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xl font-bold text-foreground truncate">{gitUser.name}</div>
+                  <div className="text-sm text-muted-foreground truncate">{gitUser.email}</div>
+                </div>
+                <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-foreground">{stats.totalCommits}</div>
+                    <div>Commits</div>
+                  </div>
+                  <Separator orientation="vertical" className="h-10" />
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-foreground">{gitRepos.length}</div>
+                    <div>Repos</div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Work Paths Info */}
         {workPaths.length > 0 && (
@@ -393,19 +505,22 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          {gitUser.name && (
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="p-3 rounded-lg bg-violet-500/10">
-                    <User size={24} className="text-violet-500" />
-                  </div>
+          <Card
+            className="cursor-pointer select-none hover:border-amber-500/50 transition-colors"
+            onClick={() => setActiveSheet('report-history')}
+            title="Click to view report history"
+          >
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="p-3 rounded-lg bg-amber-500/10">
+                  <Clock size={24} className="text-amber-500" />
                 </div>
-                <div className="text-lg font-bold mb-1 text-foreground truncate">{gitUser.name}</div>
-                <div className="text-sm text-muted-foreground truncate">{gitUser.email}</div>
-              </CardContent>
-            </Card>
-          )}
+                <span className="text-sm text-muted-foreground">{reportHistory.length} total</span>
+              </div>
+              <div className="text-3xl font-bold mb-1 text-foreground">{reportHistory.length}</div>
+              <div className="text-sm text-muted-foreground">Daily Reports</div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Daily Report Sheet */}
@@ -450,6 +565,109 @@ export default function Dashboard() {
                 <div className="text-sm text-muted-foreground py-8 text-center">
                   暂无日报内容，点击「重新生成」
                 </div>
+              )}
+            </div>
+          </SheetContent>
+        </Sheet>
+
+        {/* Report History Sheet */}
+        <Sheet open={activeSheet === 'report-history'} onOpenChange={(open) => { if (!open) { setActiveSheet(null); setSelectedReport(null); } }}>
+          <SheetContent side="right" className="w-full sm:max-w-3xl overflow-y-auto">
+            <SheetHeader>
+              <SheetTitle className="flex items-center gap-2">
+                <Clock size={18} />
+                日报记录 ({reportHistory.length})
+              </SheetTitle>
+              <SheetDescription>
+                查看和管理已生成的工作日报
+              </SheetDescription>
+            </SheetHeader>
+            <div className="mt-6">
+              {selectedReport ? (
+                <div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mb-4"
+                    onClick={() => setSelectedReport(null)}
+                  >
+                    ← 返回列表
+                  </Button>
+                  <div className="mb-3">
+                    <h3 className="text-lg font-semibold">{selectedReport.title}</h3>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+                      <span>{format(new Date(selectedReport.created_at), 'yyyy-MM-dd HH:mm')}</span>
+                      <Badge variant="secondary" className="text-[10px]">{timeRangeLabels[selectedReport.time_range] || selectedReport.time_range}</Badge>
+                      <span>{selectedReport.commits_count} commits</span>
+                      <span>{selectedReport.repos_count} repos</span>
+                    </div>
+                  </div>
+                  <Separator className="my-4" />
+                  <div className="prose prose-sm dark:prose-invert max-w-none">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {selectedReport.content}
+                    </ReactMarkdown>
+                  </div>
+                  <div className="flex items-center gap-2 mt-6">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => copyToClipboard(selectedReport.content)}
+                    >
+                      {copiedReport ? <Check size={14} /> : <Copy size={14} />}
+                      {copiedReport ? '已复制' : '复制内容'}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => handleDeleteReport(selectedReport.id)}
+                    >
+                      <Trash2 size={14} />
+                      删除
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <ScrollArea className="h-[calc(100vh-200px)]">
+                  {reportHistory.length === 0 ? (
+                    <div className="text-sm text-muted-foreground py-8 text-center">
+                      暂无日报记录，点击「Generate」生成第一份日报
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {reportHistory.map((report) => (
+                        <div
+                          key={report.id}
+                          className="flex items-center gap-3 p-3 rounded-lg border bg-card hover:border-primary/50 transition-colors cursor-pointer group"
+                          onClick={() => setSelectedReport(report)}
+                        >
+                          <div className="p-2 rounded-lg bg-amber-500/10">
+                            <FileText size={16} className="text-amber-500" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-foreground truncate">{report.title}</div>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                              <span>{format(new Date(report.created_at), 'MM-dd HH:mm')}</span>
+                              <Badge variant="secondary" className="text-[10px] px-1 py-0 h-3.5">
+                                {timeRangeLabels[report.time_range] || report.time_range}
+                              </Badge>
+                              <span>{report.commits_count} commits</span>
+                            </div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
+                            onClick={(e) => { e.stopPropagation(); handleDeleteReport(report.id); }}
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </ScrollArea>
               )}
             </div>
           </SheetContent>
@@ -657,6 +875,13 @@ export default function Dashboard() {
               </div>
 
               <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setActiveSheet('report-history')}
+                >
+                  <Clock size={16} />
+                  日报列表
+                </Button>
                 {reportContent && (
                   <Button
                     variant="outline"
@@ -678,24 +903,47 @@ export default function Dashboard() {
           </CardHeader>
         </Card>
 
-        {/* Quick Actions */}
+        {/* Quick Actions and Recent Activity */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Quick Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Button variant="secondary" className="w-full justify-start gap-3">
-                <GitBranch size={18} />
-                View Git Status
+              <Button
+                variant="secondary"
+                className="w-full justify-start gap-3"
+                onClick={() => {
+                  fetchStats();
+                  addActivity('refresh', '刷新了 Git 统计数据');
+                }}
+              >
+                <RefreshCw size={18} />
+                Refresh Git Stats
               </Button>
-              <Button variant="secondary" className="w-full justify-start gap-3">
-                <FileText size={18} />
+              <Button
+                variant="secondary"
+                className="w-full justify-start gap-3"
+                onClick={() => onNavigate?.('agents')}
+              >
+                <Bot size={18} />
                 Create New Agent
               </Button>
-              <Button variant="secondary" className="w-full justify-start gap-3">
-                <TrendingUp size={18} />
-                View Statistics
+              <Button
+                variant="secondary"
+                className="w-full justify-start gap-3"
+                onClick={() => onNavigate?.('chat')}
+              >
+                <MessageSquare size={18} />
+                Open Chat
+              </Button>
+              <Button
+                variant="secondary"
+                className="w-full justify-start gap-3"
+                onClick={() => onNavigate?.('settings')}
+              >
+                <Settings size={18} />
+                Settings
               </Button>
             </CardContent>
           </Card>
@@ -705,11 +953,38 @@ export default function Dashboard() {
               <CardTitle className="text-lg">Recent Activity</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3 text-sm">
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span>No recent activity</span>
+              {activities.length === 0 ? (
+                <div className="space-y-3 text-sm">
+                  <div className="flex items-center justify-between text-muted-foreground">
+                    <span>No recent activity</span>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <ScrollArea className="h-48">
+                  <div className="space-y-2">
+                    {activities.map((activity) => (
+                      <div key={activity.id} className="flex items-start gap-2 text-sm">
+                        <div className={cn(
+                          'mt-0.5 p-1 rounded',
+                          activity.type === 'report' && 'bg-amber-500/10 text-amber-500',
+                          activity.type === 'refresh' && 'bg-blue-500/10 text-blue-500',
+                          activity.type === 'navigate' && 'bg-violet-500/10 text-violet-500',
+                        )}>
+                          {activity.type === 'report' && <FileText size={12} />}
+                          {activity.type === 'refresh' && <RefreshCw size={12} />}
+                          {activity.type === 'navigate' && <Activity size={12} />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-foreground truncate">{activity.message}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {format(activity.time, 'HH:mm:ss')}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
             </CardContent>
           </Card>
         </div>
