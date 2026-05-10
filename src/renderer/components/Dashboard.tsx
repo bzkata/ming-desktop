@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Calendar as CalendarIcon, GitBranch, FileText, TrendingUp, Play, RefreshCw, Folder, Activity, User, Plus, Minus, Copy, Check, Clock, Trash2 } from 'lucide-react';
+import { Calendar as CalendarIcon, GitBranch, FileText, TrendingUp, Play, RefreshCw, Folder, Activity, User, Plus, Minus, Copy, Check } from 'lucide-react';
 import { format } from 'date-fns';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -10,7 +8,6 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '.
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from './ui/sheet';
 import { Calendar } from './ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
-import { ScrollArea } from './ui/scroll-area';
 import { Separator } from './ui/separator';
 import { cn } from '@/lib/utils';
 
@@ -32,22 +29,11 @@ interface CommitInfo {
   branches: string;
 }
 
-interface DailyReportRecord {
-  id: number;
-  title: string;
-  content: string;
-  time_range: string;
-  commits_count: number;
-  repos_count: number;
-  created_at: string;
-}
-
 interface DashboardProps {
-  onNavigate?: (tab: string) => void;
+  onStartChat?: (request: { agentName: string; message: string; model?: string; newConversation?: boolean }) => void;
 }
 
-export default function Dashboard({ onNavigate }: DashboardProps) {
-  const [isGenerating, setIsGenerating] = useState(false);
+export default function Dashboard({ onStartChat }: DashboardProps) {
   const [commits, setCommits] = useState<CommitInfo[]>([]);
   const [timeRange, setTimeRange] = useState<string>('today');
   const [customSince, setCustomSince] = useState<Date>();
@@ -59,14 +45,9 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const [workPaths, setWorkPaths] = useState<string[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [gitRepos, setGitRepos] = useState<GitRepo[]>([]);
-  const [activeSheet, setActiveSheet] = useState<'commits' | 'repos' | 'report' | 'report-history' | null>(null);
-  const [reportContent, setReportContent] = useState('');
+  const [activeSheet, setActiveSheet] = useState<'commits' | 'repos' | null>(null);
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
-  const [copiedReport, setCopiedReport] = useState(false);
-  const [dailyReporterAgentId, setDailyReporterAgentId] = useState<string | null>(null);
   const [gitUser, setGitUser] = useState({ name: '', email: '' });
-  const [reportHistory, setReportHistory] = useState<DailyReportRecord[]>([]);
-  const [selectedReport, setSelectedReport] = useState<DailyReportRecord | null>(null);
 
   // Sort repos by activity: repos with commits first (sorted by date desc), then repos without commits
   const sortedGitRepos = useMemo(() => {
@@ -111,28 +92,10 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     }
   }, []);
 
-  const loadReportHistory = useCallback(async () => {
-    try {
-      const reports = await window.electronAPI.dailyReport.list();
-      setReportHistory(reports || []);
-    } catch {
-      setReportHistory([]);
-    }
-  }, []);
-
   useEffect(() => {
     loadWorkPaths();
     window.electronAPI.git.getUser().then(setGitUser).catch(() => {});
-    loadReportHistory();
-  }, [loadWorkPaths, loadReportHistory]);
-
-  // Find Daily Reporter agent on mount
-  useEffect(() => {
-    window.electronAPI.agents.list().then(agents => {
-      const reporter = agents.find((a: any) => a.name === 'Daily Reporter');
-      if (reporter) setDailyReporterAgentId(reporter.id);
-    });
-  }, []);
+  }, [loadWorkPaths]);
 
   useEffect(() => {
     if (workPaths.length > 0) {
@@ -186,94 +149,26 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   }, [workPaths, fetchStats]);
 
   const handleGenerateReport = async () => {
-    // Refresh commit stats first (for the stats cards)
-    await fetchStats();
+    const timeRangeLabels: Record<string, string> = {
+      today: '今天',
+      yesterday: '昨天',
+      day_before_yesterday: '前天',
+      week: '本周',
+    };
 
-    if (!dailyReporterAgentId) {
-      console.error('Daily Reporter agent not found');
-      return;
+    let rangeLabel = timeRangeLabels[timeRange] || timeRange;
+    if (timeRange === 'custom') {
+      const parts = [];
+      if (customSince) parts.push(format(customSince, 'yyyy-MM-dd'));
+      if (customUntil) parts.push(`至 ${format(customUntil, 'yyyy-MM-dd')}`);
+      rangeLabel = parts.join(' ') || '自定义范围';
     }
 
-    setIsGenerating(true);
-    setReportContent('');
-    setActiveSheet('report');
-
-    try {
-      // Create a conversation for this report
-      const conv = await window.electronAPI.conversations.create();
-
-      // Build user message with time range context
-      const timeRangeLabels: Record<string, string> = {
-        today: '今天',
-        yesterday: '昨天',
-        day_before_yesterday: '前天',
-        week: '本周',
-      };
-      let rangeLabel = timeRangeLabels[timeRange] || timeRange;
-      if (timeRange === 'custom') {
-        const parts = [];
-        if (customSince) parts.push(format(customSince, 'yyyy-MM-dd'));
-        if (customUntil) parts.push(`至 ${format(customUntil, 'yyyy-MM-dd')}`);
-        rangeLabel = parts.join(' ') || '自定义范围';
-      }
-      const userMessage = `请生成工作日报，时间范围：${rangeLabel}`;
-
-      // Set up stream listeners
-      const unsubChunk = window.electronAPI.conversations.onStreamChunk((data) => {
-        if (data.conversationId === conv.id) {
-          setReportContent(prev => prev + data.content);
-        }
-      });
-      const unsubEnd = window.electronAPI.conversations.onStreamEnd(async (data) => {
-        unsubChunk();
-        unsubEnd();
-        unsubError();
-        setIsGenerating(false);
-
-        // Save the report to history
-        const fullContent = data?.fullContent || reportContent;
-        if (fullContent) {
-          const title = `${rangeLabel}工作日报 - ${format(new Date(), 'yyyy-MM-dd')}`;
-          try {
-            await window.electronAPI.dailyReport.save({
-              title,
-              content: fullContent,
-              timeRange,
-              commitsCount: stats.totalCommits,
-              reposCount: stats.totalRepos,
-            });
-            loadReportHistory();
-          } catch (e) {
-            console.error('Failed to save report:', e);
-          }
-        }
-      });
-      const unsubError = window.electronAPI.conversations.onStreamError((data) => {
-        unsubChunk();
-        unsubEnd();
-        unsubError();
-        console.error('Report generation error:', data.error);
-        setIsGenerating(false);
-      });
-
-      // Fire the chat — agent will call daily-report tool and format the response
-      window.electronAPI.conversations.chat(conv.id, dailyReporterAgentId, userMessage);
-    } catch (error) {
-      console.error('Failed to generate report:', error);
-      setIsGenerating(false);
-    }
-  };
-
-  const handleDeleteReport = async (id: number) => {
-    try {
-      await window.electronAPI.dailyReport.delete(id);
-      setReportHistory(prev => prev.filter(r => r.id !== id));
-      if (selectedReport?.id === id) {
-        setSelectedReport(null);
-      }
-    } catch (e) {
-      console.error('Failed to delete report:', e);
-    }
+    onStartChat?.({
+      agentName: 'Daily Reporter',
+      message: `请生成工作日报，时间范围：${rangeLabel}`,
+      newConversation: true,
+    });
   };
 
   // Group commits by repo
@@ -296,22 +191,11 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       if (hash) {
         setCopiedHash(hash);
         setTimeout(() => setCopiedHash(null), 2000);
-      } else {
-        setCopiedReport(true);
-        setTimeout(() => setCopiedReport(false), 2000);
       }
     } catch {
       // silently fail
     }
   }, []);
-
-  const timeRangeLabels: Record<string, string> = {
-    today: '今天',
-    yesterday: '昨天',
-    day_before_yesterday: '前天',
-    week: '本周',
-    custom: '自定义',
-  };
 
   return (
     <div className="h-full overflow-y-auto p-8">
@@ -452,7 +336,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         )}
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           <Card
             className={cn('cursor-pointer select-none transition-colors', stats.totalCommits > 0 && 'hover:border-primary/50')}
             onClick={() => { if (stats.totalCommits > 0) setActiveSheet('commits'); }}
@@ -485,174 +369,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               <div className="text-sm text-muted-foreground">Git Repositories</div>
             </CardContent>
           </Card>
-
-          <Card
-            className="cursor-pointer select-none hover:border-amber-500/50 transition-colors"
-            onClick={() => setActiveSheet('report-history')}
-            title="Click to view report history"
-          >
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="p-3 rounded-lg bg-amber-500/10">
-                  <Clock size={24} className="text-amber-500" />
-                </div>
-                <span className="text-sm text-muted-foreground">{reportHistory.length} total</span>
-              </div>
-              <div className="text-3xl font-bold mb-1 text-foreground">{reportHistory.length}</div>
-              <div className="text-sm text-muted-foreground">Daily Reports</div>
-            </CardContent>
-          </Card>
         </div>
-
-        {/* Daily Report Sheet */}
-        <Sheet open={activeSheet === 'report'} onOpenChange={(open) => !open && setActiveSheet(null)}>
-          <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
-            <SheetHeader>
-              <div className="flex items-center justify-between pr-6">
-                <SheetTitle className="flex items-center gap-2">
-                  <FileText size={18} />
-                  工作日报
-                </SheetTitle>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => copyToClipboard(reportContent)}
-                  >
-                    {copiedReport ? <Check size={14} /> : <Copy size={14} />}
-                    {copiedReport ? '已复制' : '复制'}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleGenerateReport}
-                    disabled={isGenerating}
-                  >
-                    <Play size={14} />
-                    {isGenerating ? '生成中...' : '重新生成'}
-                  </Button>
-                </div>
-              </div>
-              <SheetDescription>
-                {format(new Date(), 'yyyy年MM月dd日')}
-              </SheetDescription>
-            </SheetHeader>
-            <div className="mt-4 prose prose-sm dark:prose-invert max-w-none">
-              {reportContent ? (
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {reportContent}
-                </ReactMarkdown>
-              ) : (
-                <div className="text-sm text-muted-foreground py-8 text-center">
-                  暂无日报内容，点击「重新生成」
-                </div>
-              )}
-            </div>
-          </SheetContent>
-        </Sheet>
-
-        {/* Report History Sheet */}
-        <Sheet open={activeSheet === 'report-history'} onOpenChange={(open) => { if (!open) { setActiveSheet(null); setSelectedReport(null); } }}>
-          <SheetContent side="right" className="w-full sm:max-w-3xl overflow-y-auto">
-            <SheetHeader>
-              <SheetTitle className="flex items-center gap-2">
-                <Clock size={18} />
-                日报记录 ({reportHistory.length})
-              </SheetTitle>
-              <SheetDescription>
-                查看和管理已生成的工作日报
-              </SheetDescription>
-            </SheetHeader>
-            <div className="mt-6">
-              {selectedReport ? (
-                <div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="mb-4"
-                    onClick={() => setSelectedReport(null)}
-                  >
-                    ← 返回列表
-                  </Button>
-                  <div className="mb-3">
-                    <h3 className="text-lg font-semibold">{selectedReport.title}</h3>
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                      <span>{format(new Date(selectedReport.created_at), 'yyyy-MM-dd HH:mm')}</span>
-                      <Badge variant="secondary" className="text-[10px]">{timeRangeLabels[selectedReport.time_range] || selectedReport.time_range}</Badge>
-                      <span>{selectedReport.commits_count} commits</span>
-                      <span>{selectedReport.repos_count} repos</span>
-                    </div>
-                  </div>
-                  <Separator className="my-4" />
-                  <div className="prose prose-sm dark:prose-invert max-w-none">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {selectedReport.content}
-                    </ReactMarkdown>
-                  </div>
-                  <div className="flex items-center gap-2 mt-6">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => copyToClipboard(selectedReport.content)}
-                    >
-                      {copiedReport ? <Check size={14} /> : <Copy size={14} />}
-                      {copiedReport ? '已复制' : '复制内容'}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => handleDeleteReport(selectedReport.id)}
-                    >
-                      <Trash2 size={14} />
-                      删除
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <ScrollArea className="h-[calc(100vh-200px)]">
-                  {reportHistory.length === 0 ? (
-                    <div className="text-sm text-muted-foreground py-8 text-center">
-                      暂无日报记录，点击「Generate」生成第一份日报
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {reportHistory.map((report) => (
-                        <div
-                          key={report.id}
-                          className="flex items-center gap-3 p-3 rounded-lg border bg-card hover:border-primary/50 transition-colors cursor-pointer group"
-                          onClick={() => setSelectedReport(report)}
-                        >
-                          <div className="p-2 rounded-lg bg-amber-500/10">
-                            <FileText size={16} className="text-amber-500" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium text-foreground truncate">{report.title}</div>
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                              <span>{format(new Date(report.created_at), 'MM-dd HH:mm')}</span>
-                              <Badge variant="secondary" className="text-[10px] px-1 py-0 h-3.5">
-                                {timeRangeLabels[report.time_range] || report.time_range}
-                              </Badge>
-                              <span>{report.commits_count} commits</span>
-                            </div>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
-                            onClick={(e) => { e.stopPropagation(); handleDeleteReport(report.id); }}
-                          >
-                            <Trash2 size={14} />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </ScrollArea>
-              )}
-            </div>
-          </SheetContent>
-        </Sheet>
 
         {/* Commit Detail Sheet */}
         <Sheet open={activeSheet === 'commits'} onOpenChange={(open) => !open && setActiveSheet(null)}>
@@ -670,13 +387,9 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             </SheetHeader>
             <div className="mt-4">
               <div className="flex items-center justify-end mb-4">
-                <Button
-                  onClick={handleGenerateReport}
-                  disabled={isGenerating}
-                  size="sm"
-                >
+                <Button onClick={handleGenerateReport} size="sm">
                   <Play size={14} />
-                  {isGenerating ? 'Generating...' : 'Regenerate'}
+                  Generate in Chat
                 </Button>
               </div>
 
@@ -856,32 +569,18 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               </div>
 
               <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setActiveSheet('report-history')}
-                >
-                  <Clock size={16} />
-                  日报列表
-                </Button>
-                {reportContent && (
-                  <Button
-                    variant="outline"
-                    onClick={() => setActiveSheet('report')}
-                  >
-                    <FileText size={16} />
-                    查看日报
-                  </Button>
-                )}
-                <Button
-                  onClick={handleGenerateReport}
-                  disabled={isGenerating}
-                >
+                <Button onClick={handleGenerateReport}>
                   <Play size={18} />
-                  {isGenerating ? 'Generating...' : 'Generate'}
+                  Generate in Chat
                 </Button>
               </div>
             </div>
           </CardHeader>
+          <CardContent className="pt-0">
+            <p className="text-sm text-muted-foreground">
+              点击后会进入聊天页，并由 `Daily Reporter` 直接在会话中生成日报。
+            </p>
+          </CardContent>
         </Card>
       </div>
     </div>

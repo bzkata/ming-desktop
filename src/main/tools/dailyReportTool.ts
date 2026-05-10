@@ -6,11 +6,21 @@ import { ExecutorService } from '../services/ExecutorService';
 import { ConfigManager } from '../services/ConfigManager';
 import { Logger } from '../utils/Logger';
 
+async function getGitUsername(executorService: ExecutorService): Promise<string> {
+  try {
+    const result = await executorService.executeCommand('git config --global user.name');
+    if (result.exitCode === 0 && result.stdout?.trim()) {
+      return result.stdout.trim();
+    }
+  } catch {}
+  return '';
+}
+
 const DEFINITION: ToolDefinition = {
   type: 'function',
   function: {
     name: 'daily-report',
-    description: '收集 Git 仓库的提交记录。返回 JSON 格式的提交数据（按仓库分组），用于生成工作日报。',
+    description: '收集当前用户在 Git 仓库中的提交记录。默认自动过滤为当前 git 用户的提交，返回 JSON 格式的提交数据（按仓库分组），用于生成工作日报。',
     parameters: {
       type: 'object',
       properties: {
@@ -34,7 +44,7 @@ const DEFINITION: ToolDefinition = {
         },
         author: {
           type: 'string',
-          description: '按 Git 作者过滤（如 zhangbing）',
+          description: '按 Git 作者过滤。默认自动使用当前 git 用户名，一般无需指定',
         },
       },
     },
@@ -69,7 +79,9 @@ export function createDailyReportTool(
 
       if (params.sinceDate) env.SINCE_DATE = params.sinceDate;
       if (params.untilDate) env.UNTIL_DATE = params.untilDate;
-      if (params.author) env.FILTER_BY_AUTHOR = params.author;
+
+      const author = params.author || await getGitUsername(executorService);
+      if (author) env.FILTER_BY_AUTHOR = author;
 
       const result = await executorService.executeCommand(`python3 ${scriptPath}`, {
         cwd: home || undefined,

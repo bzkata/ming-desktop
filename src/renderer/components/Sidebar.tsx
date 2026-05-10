@@ -20,8 +20,8 @@ export default function Sidebar({ activeTab, onTabChange, collapsed: controlledC
 
   const menuItems = [
     { id: 'welcome', label: 'Welcome', icon: Home },
-    { id: 'dashboard', label: 'Workground', icon: LayoutDashboard },
-    { id: 'techstack', label: 'Analyzer', icon: Search },
+    { id: 'dashboard', label: 'WorkGround', icon: LayoutDashboard },
+    { id: 'techstack', label: 'TechStack Analyzer', icon: Search },
     { id: 'chat', label: 'Chat', icon: MessageSquare },
     { id: 'agents', label: 'Agents', icon: Bot },
     { id: 'settings', label: 'Settings', icon: Settings },

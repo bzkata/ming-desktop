@@ -11,7 +11,7 @@ import { Label } from './ui/label';
 import { cn } from '@/lib/utils';
 
 export default function Settings() {
-  const { theme: ctxTheme, setTheme: setCtxTheme, colorTheme, setColorTheme } = useTheme();
+  const { setTheme: setCtxTheme, colorTheme, setColorTheme } = useTheme();
   const [theme, setTheme] = useState<'light' | 'dark' | 'auto'>('dark');
   const [language, setLanguage] = useState('zh-CN');
   const [autoUpdate, setAutoUpdate] = useState(true);

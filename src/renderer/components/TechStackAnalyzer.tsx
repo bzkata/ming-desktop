@@ -1,9 +1,8 @@
 import { useState, useCallback } from 'react';
-import { PackageOpen, FolderSearch, Loader2, Upload, FileCode, Layers, Cpu, Wrench, Box, Layers3, Info, Activity } from 'lucide-react';
+import { PackageOpen, FolderSearch, Loader2, Upload, FileCode, Layers, Cpu, Wrench, Box, Layers3, Activity } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Badge } from './ui/badge';
-import { Separator } from './ui/separator';
 
 interface FrameworkDetection {
   name: string;
@@ -189,7 +188,7 @@ function ProjectResult({ result }: { result: ProjectAnalysisResult }) {
           <div className="space-y-3">
             {/* Bar chart */}
             <div className="flex rounded-full overflow-hidden h-3 bg-muted">
-              {result.languages.map((lang, i) => (
+              {result.languages.map((lang) => (
                 <div
                   key={lang.name}
                   style={{

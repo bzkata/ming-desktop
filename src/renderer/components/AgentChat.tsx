@@ -52,6 +52,13 @@ interface LLMProvider {
   enabled: boolean;
 }
 
+interface ChatLaunchRequest {
+  agentName: string;
+  message: string;
+  model?: string;
+  newConversation?: boolean;
+}
+
 /** Parse thinking blocks from text, returning thinking content and the rest */
 function parseThinking(text: string): { thinking: string | null; content: string } {
   // Match both `<think></think>` (DeepSeek) and `<think></think>` (Qwen) patterns
@@ -135,7 +142,12 @@ function MessageBubble({ message }: { message: Message }) {
   );
 }
 
-export default function AgentChat() {
+interface AgentChatProps {
+  launchRequest?: ChatLaunchRequest | null;
+  onLaunchHandled?: () => void;
+}
+
+export default function AgentChat({ launchRequest, onLaunchHandled }: AgentChatProps) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
@@ -170,6 +182,98 @@ export default function AgentChat() {
     });
     return () => remove?.();
   }, []);
+
+  const sendConversationMessage = async ({
+    agentId,
+    message,
+    model,
+    resetMessages = false,
+    forceNewConversation = false,
+  }: {
+    agentId: string;
+    message: string;
+    model?: string;
+    resetMessages?: boolean;
+    forceNewConversation?: boolean;
+  }) => {
+    if (isLoading) return;
+
+    let convId = forceNewConversation ? null : currentConversationId;
+    if (!convId) {
+      try {
+        const conv = await window.electronAPI.conversations.create();
+        convId = conv.id;
+        setConversations(prev => [conv, ...prev]);
+        setCurrentConversationId(convId);
+      } catch (error) {
+        console.error('Failed to create conversation:', error);
+        return;
+      }
+    }
+
+    setSelectedAgentId(agentId);
+    if (model) {
+      setSelectedModel(model);
+    }
+
+    const userMessage: Message = {
+      role: 'user',
+      content: message,
+      timestamp: new Date().toISOString()
+    };
+    const assistantMessage: Message = {
+      role: 'assistant',
+      content: '',
+      timestamp: new Date().toISOString()
+    };
+
+    setMessages(prev => resetMessages ? [userMessage, assistantMessage] : [...prev, userMessage, assistantMessage]);
+    setInput('');
+    setIsLoading(true);
+
+    const removeChunk = window.electronAPI.conversations.onStreamChunk((data) => {
+      if (data.conversationId !== convId) return;
+      setMessages(prev => {
+        const updated = [...prev];
+        const last = updated[updated.length - 1];
+        if (last && last.role === 'assistant') {
+          updated[updated.length - 1] = { ...last, content: last.content + data.content };
+        }
+        return updated;
+      });
+    });
+
+    const removeEnd = window.electronAPI.conversations.onStreamEnd((data) => {
+      removeChunk();
+      removeEnd();
+      removeError();
+      if (data.conversationId !== convId) return;
+      setIsLoading(false);
+      loadConversations();
+    });
+
+    const removeError = window.electronAPI.conversations.onStreamError((data) => {
+      removeChunk();
+      removeEnd();
+      removeError();
+      if (data.conversationId !== convId) return;
+      setMessages(prev => {
+        const updated = [...prev];
+        const last = updated[updated.length - 1];
+        if (last && last.role === 'assistant' && !last.content.startsWith('Error:')) {
+          updated[updated.length - 1] = {
+            ...last,
+            content: last.content ? `${last.content}\n\nError: ${data.error}` : `Error: ${data.error}`,
+          };
+        }
+        return updated;
+      });
+      setIsLoading(false);
+    });
+
+    if (!convId) return;
+    window.electronAPI.conversations.chat(convId, agentId, message, model || selectedModel || undefined);
+  };
 
   const loadAgents = async () => {
     try {
@@ -276,81 +380,32 @@ export default function AgentChat() {
 
   const handleSendMessage = async () => {
     if (!input.trim() || !selectedAgentId || isLoading) return;
+    await sendConversationMessage({
+      agentId: selectedAgentId,
+      message: input,
+      model: selectedModel || undefined,
+    });
+  };
 
-    // Auto-create conversation if none selected
-    let convId = currentConversationId;
-    if (!convId) {
-      try {
-        const conv = await window.electronAPI.conversations.create();
-        convId = conv.id;
-        setConversations(prev => [conv, ...prev]);
-        setCurrentConversationId(convId);
-      } catch (error) {
-        console.error('Failed to create conversation:', error);
-        return;
-      }
+  useEffect(() => {
+    if (!launchRequest || agents.length === 0 || isLoading) return;
+
+    const agent = agents.find(a => a.name === launchRequest.agentName);
+    if (!agent) {
+      console.error(`Agent not found for launch request: ${launchRequest.agentName}`);
+      onLaunchHandled?.();
+      return;
     }
 
-    const userMessage: Message = {
-      role: 'user',
-      content: input,
-      timestamp: new Date().toISOString()
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-    setInput('');
-    setIsLoading(true);
-
-    // Add empty assistant message that will be filled incrementally
-    setMessages(prev => [...prev, { role: 'assistant', content: '', timestamp: new Date().toISOString() }]);
-
-    // Set up streaming listeners
-    const removeChunk = window.electronAPI.conversations.onStreamChunk((data) => {
-      if (data.conversationId !== convId) return;
-      setMessages(prev => {
-        const updated = [...prev];
-        const last = updated[updated.length - 1];
-        if (last && last.role === 'assistant') {
-          updated[updated.length - 1] = { ...last, content: last.content + data.content };
-        }
-        return updated;
-      });
+    onLaunchHandled?.();
+    void sendConversationMessage({
+      agentId: agent.id,
+      message: launchRequest.message,
+      model: launchRequest.model,
+      resetMessages: true,
+      forceNewConversation: launchRequest.newConversation,
     });
-
-    const removeEnd = window.electronAPI.conversations.onStreamEnd((data) => {
-      // Always clean up listeners, even if conversation switched
-      removeChunk();
-      removeEnd();
-      removeError();
-      if (data.conversationId !== convId) return;
-      setIsLoading(false);
-      // Refresh conversation list to get updated title/timestamp
-      loadConversations();
-    });
-
-    const removeError = window.electronAPI.conversations.onStreamError((data) => {
-      // Always clean up listeners, even if conversation switched
-      removeChunk();
-      removeEnd();
-      removeError();
-      if (data.conversationId !== convId) return;
-      setMessages(prev => {
-        const updated = [...prev];
-        const last = updated[updated.length - 1];
-        if (last && last.role === 'assistant' && !last.content.startsWith('Error:')) {
-          updated[updated.length - 1] = {
-            ...last,
-            content: last.content ? `${last.content}\n\nError: ${data.error}` : `Error: ${data.error}`,
-          };
-        }
-        return updated;
-      });
-      setIsLoading(false);
-    });
-
-    // Send the message (fire-and-forget, response comes via listeners)
-    window.electronAPI.conversations.chat(convId!, selectedAgentId, input, selectedModel || undefined);
-  };
+  }, [agents, isLoading, launchRequest, onLaunchHandled]);
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {

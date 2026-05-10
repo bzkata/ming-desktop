@@ -1,3 +1,4 @@
+import type { OpenDialogOptions, OpenDialogReturnValue } from 'electron';
 import { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import Sidebar from './components/Sidebar';
 import Welcome from './components/Welcome';
@@ -34,10 +35,11 @@ interface ElectronAPI {
     getAll: () => Promise<any>;
   };
   dialog: {
-    showOpenDialog: (options: Electron.OpenDialogOptions) => Promise<Electron.OpenDialogReturnValue>;
+    showOpenDialog: (options: OpenDialogOptions) => Promise<OpenDialogReturnValue>;
   };
   git: {
     scanRepos: () => Promise<{ name: string; path: string }[]>;
+    getUser: () => Promise<{ name: string; email: string }>;
   };
   conversations: {
     create: () => Promise<any>;
@@ -94,6 +96,13 @@ const ThemeContext = createContext<ThemeContextType>({
 
 export function useTheme() {
   return useContext(ThemeContext);
+}
+
+interface ChatLaunchRequest {
+  agentName: string;
+  message: string;
+  model?: string;
+  newConversation?: boolean;
 }
 
 function getSystemTheme(): 'light' | 'dark' {
@@ -159,6 +168,12 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('welcome');
+  const [chatLaunchRequest, setChatLaunchRequest] = useState<ChatLaunchRequest | null>(null);
+
+  const handleStartChat = useCallback((request: ChatLaunchRequest) => {
+    setChatLaunchRequest(request);
+    setActiveTab('chat');
+  }, []);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -221,8 +236,13 @@ function App() {
           <div className="flex-1 overflow-hidden">
             {activeTab === 'welcome' && <Welcome />}
             {activeTab === 'techstack' && <TechStackAnalyzer />}
-            {activeTab === 'dashboard' && <Dashboard onNavigate={setActiveTab} />}
-            {activeTab === 'chat' && <AgentChat />}
+            {activeTab === 'dashboard' && <Dashboard onStartChat={handleStartChat} />}
+            {activeTab === 'chat' && (
+              <AgentChat
+                launchRequest={chatLaunchRequest}
+                onLaunchHandled={() => setChatLaunchRequest(null)}
+              />
+            )}
             {activeTab === 'agents' && <AgentManager />}
             {activeTab === 'settings' && <Settings />}
           </div>
