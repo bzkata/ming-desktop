@@ -8,6 +8,7 @@ import { SkillManager } from './skill/SkillManager';
 import { LLMProviderManager } from './llm/LLMProviderManager';
 import { ExecutorService } from './services/ExecutorService';
 import { ConfigManager } from './services/ConfigManager';
+import { PromptTemplateManager } from './services/PromptTemplateManager';
 import { ToolExecutor } from './tools/ToolExecutor';
 import { createDailyReportTool } from './tools/dailyReportTool';
 import { Logger } from './utils/Logger';
@@ -22,6 +23,7 @@ let llmManager: LLMProviderManager;
 let toolExecutor: ToolExecutor;
 let executorService: ExecutorService;
 let configManager: ConfigManager;
+let promptTemplateManager: PromptTemplateManager;
 
 // 开发环境检测：在 electron 开发模式下 NODE_ENV 可能未设置
 const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
@@ -81,6 +83,10 @@ async function initializeServices(): Promise<void> {
   // 初始化 Skill 管理器
   skillManager = new SkillManager();
   await skillManager.initialize();
+
+  // 初始化 Prompt Template 管理器
+  promptTemplateManager = new PromptTemplateManager();
+  promptTemplateManager.initialize();
 
   // 初始化 Agent 管理器
   agentManager = new AgentManager(
@@ -146,6 +152,23 @@ function setupIPCHandlers(): void {
 
   ipcMain.handle(IPCChannels.SKILL_SYNC_LOCAL, async () => {
     return skillManager.syncLocalSkills();
+  });
+
+  // Prompt 相关
+  ipcMain.handle(IPCChannels.PROMPT_CREATE, async (_, config: any) => {
+    return promptTemplateManager.createPrompt(config);
+  });
+
+  ipcMain.handle(IPCChannels.PROMPT_LIST, async () => {
+    return promptTemplateManager.listPrompts();
+  });
+
+  ipcMain.handle(IPCChannels.PROMPT_UPDATE, async (_, promptId: string, updates: any) => {
+    return promptTemplateManager.updatePrompt(promptId, updates);
+  });
+
+  ipcMain.handle(IPCChannels.PROMPT_DELETE, async (_, promptId: string) => {
+    return promptTemplateManager.deletePrompt(promptId);
   });
 
   // Conversation 相关

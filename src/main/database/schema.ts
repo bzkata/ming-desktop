@@ -63,6 +63,17 @@ export function runMigrations(): void {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS prompt_templates (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      trigger TEXT NOT NULL UNIQUE,
+      description TEXT DEFAULT '',
+      content TEXT NOT NULL,
+      enabled INTEGER DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   // Mark initial migration as applied
@@ -187,5 +198,25 @@ export function runMigrations(): void {
     }
 
     db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(migration5Name);
+  }
+
+  // Migration: add prompt templates
+  const migration6Name = 'add-prompt-templates';
+  const applied6 = db.prepare('SELECT 1 FROM _migrations WHERE name = ?').get(migration6Name);
+  if (!applied6) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS prompt_templates (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        trigger TEXT NOT NULL UNIQUE,
+        description TEXT DEFAULT '',
+        content TEXT NOT NULL,
+        enabled INTEGER DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+
+    db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(migration6Name);
   }
 }

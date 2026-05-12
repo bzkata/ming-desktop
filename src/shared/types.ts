@@ -51,6 +51,25 @@ export interface SkillSyncResult {
   skills: Skill[];
 }
 
+export interface PromptTemplate {
+  id: string;
+  name: string;
+  trigger: string;
+  description: string;
+  content: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PromptTemplateConfig {
+  name: string;
+  trigger?: string;
+  description?: string;
+  content: string;
+  enabled?: boolean;
+}
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;

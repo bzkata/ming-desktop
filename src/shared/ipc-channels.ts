@@ -14,6 +14,12 @@ export enum IPCChannels {
   SKILL_UPDATE = 'skill:update',
   SKILL_SYNC_LOCAL = 'skill:sync-local',
 
+  // Prompt 相关
+  PROMPT_CREATE = 'prompt:create',
+  PROMPT_LIST = 'prompt:list',
+  PROMPT_DELETE = 'prompt:delete',
+  PROMPT_UPDATE = 'prompt:update',
+
   // LLM Provider 相关
   LLM_LIST_PROVIDERS = 'llm:list-providers',
   LLM_CHAT = 'llm:chat',

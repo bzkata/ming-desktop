@@ -35,6 +35,7 @@ interface DashboardProps {
     message: string;
     model?: string;
     newConversation?: boolean;
+    reuseAgentConversation?: boolean;
     autoSend?: boolean;
   }) => void;
 }
@@ -173,7 +174,7 @@ export default function Dashboard({ onStartChat }: DashboardProps) {
     onStartChat?.({
       agentName: 'Daily Reporter',
       message: `请生成工作日报，时间范围：${rangeLabel}`,
-      newConversation: true,
+      reuseAgentConversation: true,
       autoSend: false,
     });
   };

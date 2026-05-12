@@ -27,7 +27,7 @@ const DEFINITION: ToolDefinition = {
         timeRange: {
           type: 'string',
           description: '时间范围',
-          enum: ['today', 'yesterday', 'week'],
+          enum: ['today', 'yesterday', 'day_before_yesterday', 'week', 'custom'],
         },
         sinceDate: {
           type: 'string',

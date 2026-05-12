@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Send, Bot, User, Plus, Trash2, MessageSquare, Pencil, ChevronDown, Cpu } from 'lucide-react';
+import { Send, Bot, User, Plus, Trash2, MessageSquare, Pencil, ChevronDown, Cpu, FileText } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import hljs from 'highlight.js';
+import type { PromptTemplate } from '../../shared/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -52,12 +53,50 @@ interface LLMProvider {
   enabled: boolean;
 }
 
+interface PromptSuggestion {
+  id: string;
+  name: string;
+  trigger: string;
+  description: string;
+  content: string;
+  type: 'builtin' | 'prompt';
+}
+
 interface ChatLaunchRequest {
   agentName: string;
   message: string;
   model?: string;
   newConversation?: boolean;
+  reuseAgentConversation?: boolean;
   autoSend?: boolean;
+}
+
+const DAILY_REPORT_AGENT_NAME = 'Daily Reporter';
+
+function buildDailyReportInstruction(rangeLabel = '今天'): string {
+  return `请生成工作日报，时间范围：${rangeLabel}`;
+}
+
+function parseDailyReportCommand(rawInput: string): string | null {
+  const text = rawInput.trim();
+  const match = text.match(/^(?:\/日报|@日报|\/daily-report|@Daily Reporter)(?:\s+(.+))?$/i);
+  if (!match) return null;
+
+  const rangeText = (match[1] || '').trim();
+  if (!rangeText) return buildDailyReportInstruction();
+
+  const aliases: Record<string, string> = {
+    today: '今天',
+    '今天': '今天',
+    yesterday: '昨天',
+    '昨天': '昨天',
+    '前天': '前天',
+    week: '本周',
+    '本周': '本周',
+    '这周': '本周',
+  };
+
+  return buildDailyReportInstruction(aliases[rangeText] || rangeText);
 }
 
 /** Parse thinking blocks from text, returning thinking content and the rest */
@@ -162,15 +201,33 @@ export default function AgentChat({ launchRequest, onLaunchHandled }: AgentChatP
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
   const [providers, setProviders] = useState<LLMProvider[]>([]);
+  const [promptTemplates, setPromptTemplates] = useState<PromptTemplate[]>([]);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [debugLogs, setDebugLogs] = useState<any[]>([]);
   const [debugPanelOpen, setDebugPanelOpen] = useState(false);
+  const [selectedPromptIndex, setSelectedPromptIndex] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const normalizeMessages = (items: any[]): Message[] =>
+    items.filter((m: any) => m.role !== 'system');
+
+  const loadConversationMessages = async (conversationId: string): Promise<Message[]> => {
+    const msgs = await window.electronAPI.conversations.messages(conversationId);
+    return normalizeMessages(msgs);
+  };
+
+  const getLatestConversations = async (): Promise<Conversation[]> => {
+    const result = await window.electronAPI.conversations.list();
+    setConversations(result);
+    return result;
+  };
 
   useEffect(() => {
     loadAgents();
     loadConversations();
     loadProviders();
+    loadPromptTemplates();
   }, []);
 
   useEffect(() => {
@@ -190,22 +247,48 @@ export default function AgentChat({ launchRequest, onLaunchHandled }: AgentChatP
     model,
     resetMessages = false,
     forceNewConversation = false,
+    reuseAgentConversation = false,
   }: {
     agentId: string;
     message: string;
     model?: string;
     resetMessages?: boolean;
     forceNewConversation?: boolean;
+    reuseAgentConversation?: boolean;
   }) => {
     if (isLoading) return;
 
-    let convId = forceNewConversation ? null : currentConversationId;
+    let convId = forceNewConversation || reuseAgentConversation ? null : currentConversationId;
+    let baseMessages: Message[] | null = null;
+
+    if (!forceNewConversation && reuseAgentConversation) {
+      try {
+        const latest = await getLatestConversations();
+        const reusable = latest.find((conv) => conv.agentId === agentId);
+        if (reusable) {
+          convId = reusable.id;
+          if (currentConversationId !== reusable.id) {
+            baseMessages = await loadConversationMessages(reusable.id);
+          }
+          setCurrentConversationId(reusable.id);
+        }
+      } catch (error) {
+        console.error('Failed to find reusable conversation:', error);
+      }
+
+      if (!convId && currentConversationId && selectedAgentId === agentId && messages.length === 0) {
+        convId = currentConversationId;
+        baseMessages = [];
+      }
+    }
+
     if (!convId) {
       try {
         const conv = await window.electronAPI.conversations.create();
         convId = conv.id;
         setConversations(prev => [conv, ...prev]);
         setCurrentConversationId(convId);
+        baseMessages = [];
       } catch (error) {
         console.error('Failed to create conversation:', error);
         return;
@@ -228,7 +311,11 @@ export default function AgentChat({ launchRequest, onLaunchHandled }: AgentChatP
       timestamp: new Date().toISOString()
     };
 
-    setMessages(prev => resetMessages ? [userMessage, assistantMessage] : [...prev, userMessage, assistantMessage]);
+    setMessages(prev => {
+      if (resetMessages) return [userMessage, assistantMessage];
+      const base = baseMessages !== null ? baseMessages : prev;
+      return [...base, userMessage, assistantMessage];
+    });
     setInput('');
     setIsLoading(true);
 
@@ -305,10 +392,18 @@ export default function AgentChat({ launchRequest, onLaunchHandled }: AgentChatP
     }
   };
 
+  const loadPromptTemplates = async () => {
+    try {
+      const result = await window.electronAPI.prompts.list();
+      setPromptTemplates(result || []);
+    } catch (error) {
+      console.error('Failed to load prompts:', error);
+    }
+  };
+
   const loadConversations = async () => {
     try {
-      const result = await window.electronAPI.conversations.list();
-      setConversations(result);
+      await getLatestConversations();
     } catch (error) {
       console.error('Failed to load conversations:', error);
     }
@@ -325,14 +420,33 @@ export default function AgentChat({ launchRequest, onLaunchHandled }: AgentChatP
     }
   };
 
-  const prepareDraftConversation = async (agentId: string, forceNewConversation?: boolean) => {
+  const prepareDraftConversation = async (
+    agentId: string,
+    forceNewConversation?: boolean,
+    reuseAgentConversation?: boolean
+  ) => {
     setSelectedAgentId(agentId);
 
-    if (!forceNewConversation && currentConversationId) {
+    if (!forceNewConversation && !reuseAgentConversation && currentConversationId) {
       return;
     }
 
     try {
+      if (!forceNewConversation && reuseAgentConversation) {
+        const latest = await getLatestConversations();
+        const reusable = latest.find((conv) => conv.agentId === agentId);
+        if (reusable) {
+          setCurrentConversationId(reusable.id);
+          setMessages(await loadConversationMessages(reusable.id));
+          return;
+        }
+
+        if (currentConversationId && selectedAgentId === agentId && messages.length === 0) {
+          setMessages([]);
+          return;
+        }
+      }
+
       const conv = await window.electronAPI.conversations.create();
       setConversations(prev => [conv, ...prev]);
       setCurrentConversationId(conv.id);
@@ -348,8 +462,7 @@ export default function AgentChat({ launchRequest, onLaunchHandled }: AgentChatP
       setSelectedAgentId(conv.agentId);
     }
     try {
-      const msgs = await window.electronAPI.conversations.messages(conv.id);
-      setMessages(msgs.filter((m: any) => m.role !== 'system'));
+      setMessages(await loadConversationMessages(conv.id));
     } catch (error) {
       console.error('Failed to load messages:', error);
       setMessages([]);
@@ -398,11 +511,75 @@ export default function AgentChat({ launchRequest, onLaunchHandled }: AgentChatP
 
   const handleSendMessage = async () => {
     if (!input.trim() || !selectedAgentId || isLoading) return;
+
+    const dailyReportMessage = parseDailyReportCommand(input);
+    if (dailyReportMessage) {
+      const dailyReporter = agents.find(a => a.name === DAILY_REPORT_AGENT_NAME);
+      if (dailyReporter) {
+        await sendConversationMessage({
+          agentId: dailyReporter.id,
+          message: dailyReportMessage,
+          model: selectedModel || undefined,
+          reuseAgentConversation: true,
+        });
+        return;
+      }
+    }
+
     await sendConversationMessage({
       agentId: selectedAgentId,
       message: input,
       model: selectedModel || undefined,
     });
+  };
+
+  const slashQuery = input.startsWith('/') ? input.slice(1).trim().toLowerCase() : null;
+  const promptSuggestions = useMemo<PromptSuggestion[]>(() => {
+    if (slashQuery === null) return [];
+
+    const builtins: PromptSuggestion[] = [
+      {
+        id: 'builtin-daily-report',
+        name: '生成日报',
+        trigger: '日报',
+        description: '复用 Daily Reporter 会话生成工作日报',
+        content: '/日报',
+        type: 'builtin',
+      },
+    ];
+
+    const userPrompts = promptTemplates
+      .filter((prompt) => prompt.enabled)
+      .map<PromptSuggestion>((prompt) => ({
+        id: prompt.id,
+        name: prompt.name,
+        trigger: prompt.trigger,
+        description: prompt.description,
+        content: prompt.content,
+        type: 'prompt',
+      }));
+
+    const all = [...builtins, ...userPrompts];
+    if (!slashQuery) return all.slice(0, 8);
+
+    return all
+      .filter((item) => {
+        const haystack = `${item.name} ${item.trigger} ${item.description}`.toLowerCase();
+        return haystack.includes(slashQuery);
+      })
+      .slice(0, 8);
+  }, [promptTemplates, slashQuery]);
+
+  const promptMenuOpen = slashQuery !== null && promptSuggestions.length > 0 && !isLoading;
+
+  useEffect(() => {
+    setSelectedPromptIndex(0);
+  }, [slashQuery]);
+
+  const applyPromptSuggestion = (suggestion: PromptSuggestion) => {
+    setInput(suggestion.content);
+    setSelectedPromptIndex(0);
+    requestAnimationFrame(() => inputRef.current?.focus());
   };
 
   useEffect(() => {
@@ -421,7 +598,11 @@ export default function AgentChat({ launchRequest, onLaunchHandled }: AgentChatP
       if (launchRequest.model) {
         setSelectedModel(launchRequest.model);
       }
-      void prepareDraftConversation(agent.id, launchRequest.newConversation);
+      void prepareDraftConversation(
+        agent.id,
+        launchRequest.newConversation,
+        launchRequest.reuseAgentConversation ?? agent.name === DAILY_REPORT_AGENT_NAME
+      );
       return;
     }
 
@@ -429,12 +610,39 @@ export default function AgentChat({ launchRequest, onLaunchHandled }: AgentChatP
       agentId: agent.id,
       message: launchRequest.message,
       model: launchRequest.model,
-      resetMessages: true,
+      resetMessages: launchRequest.newConversation === true,
       forceNewConversation: launchRequest.newConversation,
+      reuseAgentConversation: launchRequest.reuseAgentConversation ?? agent.name === DAILY_REPORT_AGENT_NAME,
     });
   }, [agents, isLoading, launchRequest, onLaunchHandled]);
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (promptMenuOpen) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedPromptIndex((index) => (index + 1) % promptSuggestions.length);
+        return;
+      }
+
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedPromptIndex((index) => (index - 1 + promptSuggestions.length) % promptSuggestions.length);
+        return;
+      }
+
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        applyPromptSuggestion(promptSuggestions[selectedPromptIndex]);
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setInput('');
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
@@ -630,7 +838,7 @@ export default function AgentChat({ launchRequest, onLaunchHandled }: AgentChatP
           <>
             <Separator />
             <div className="p-4 bg-background">
-              {/* Model and Agent Selector - moved above input */}
+              {/* Compact controls above the message input */}
               <div className="flex items-center gap-2 mb-3">
                 <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted text-xs text-muted-foreground">
                   <Cpu size={12} />
@@ -648,24 +856,77 @@ export default function AgentChat({ launchRequest, onLaunchHandled }: AgentChatP
                     )}
                   </select>
                 </div>
-                <select
-                  value={selectedAgentId || ''}
-                  onChange={(e) => setSelectedAgentId(e.target.value)}
-                  className="text-xs border border-border rounded-md px-2 py-1 bg-background text-muted-foreground"
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      title={selectedAgent ? `Agent: ${selectedAgent.name}` : 'Agent'}
+                    >
+                      <Bot size={14} />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    {agents.map((agent) => (
+                      <DropdownMenuItem
+                        key={agent.id}
+                        onClick={() => setSelectedAgentId(agent.id)}
+                      >
+                        {agent.name}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  title="日报"
+                  onClick={() => setInput('/日报')}
+                  disabled={isLoading}
                 >
-                  {agents.map((agent) => (
-                    <option key={agent.id} value={agent.id}>
-                      {agent.name}
-                    </option>
-                  ))}
-                </select>
+                  <FileText size={14} />
+                </Button>
               </div>
-              <div className="flex gap-3">
+              <div className="relative flex gap-3">
+                {promptMenuOpen && (
+                  <div className="absolute left-0 right-14 bottom-full mb-2 rounded-lg border bg-popover text-popover-foreground shadow-lg overflow-hidden z-50">
+                    {promptSuggestions.map((suggestion, index) => (
+                      <button
+                        key={suggestion.id}
+                        type="button"
+                        className={cn(
+                          'w-full flex items-start gap-3 px-3 py-2.5 text-left transition-colors',
+                          index === selectedPromptIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/60'
+                        )}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          applyPromptSuggestion(suggestion);
+                        }}
+                      >
+                        <FileText size={15} className="mt-0.5 text-muted-foreground shrink-0" />
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-2">
+                            <span className="font-medium text-sm truncate">{suggestion.name}</span>
+                            <span className="font-mono text-[11px] text-muted-foreground shrink-0">/{suggestion.trigger}</span>
+                          </span>
+                          {suggestion.description && (
+                            <span className="block text-xs text-muted-foreground truncate mt-0.5">
+                              {suggestion.description}
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <Input
+                  ref={inputRef}
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  onKeyPress={handleKeyPress}
+                  onKeyDown={handleInputKeyDown}
                   placeholder={`Message ${selectedAgent?.name || 'agent'}${selectedModel ? ` (${selectedModel})` : ''}...`}
                   disabled={isLoading}
                   className="flex-1"

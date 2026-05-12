@@ -26,6 +26,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     syncLocal: () => ipcRenderer.invoke(IPCChannels.SKILL_SYNC_LOCAL),
   },
 
+  // Prompt API
+  prompts: {
+    create: (config: any) => ipcRenderer.invoke(IPCChannels.PROMPT_CREATE, config),
+    list: () => ipcRenderer.invoke(IPCChannels.PROMPT_LIST),
+    update: (promptId: string, updates: any) =>
+      ipcRenderer.invoke(IPCChannels.PROMPT_UPDATE, promptId, updates),
+    delete: (promptId: string) =>
+      ipcRenderer.invoke(IPCChannels.PROMPT_DELETE, promptId),
+  },
+
   // Conversation API
   conversations: {
     create: () => ipcRenderer.invoke(IPCChannels.CONVERSATION_CREATE),
@@ -139,6 +149,12 @@ export interface ElectronAPI {
     update: (skillId: string, updates: any) => Promise<void>;
     delete: (skillId: string) => Promise<void>;
     syncLocal: () => Promise<any>;
+  };
+  prompts: {
+    create: (config: any) => Promise<string>;
+    list: () => Promise<any[]>;
+    update: (promptId: string, updates: any) => Promise<void>;
+    delete: (promptId: string) => Promise<void>;
   };
   conversations: {
     create: () => Promise<any>;

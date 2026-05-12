@@ -6,6 +6,7 @@ import Dashboard from './components/Dashboard';
 import AgentChat from './components/AgentChat';
 import AgentManager from './components/AgentManager';
 import SkillManager from './components/SkillManager';
+import PromptManager from './components/PromptManager';
 import Settings from './components/Settings';
 import TechStackAnalyzer from './components/TechStackAnalyzer';
 import { themePresets, defaultThemeName, applyThemePreset, type ThemePreset } from './lib/themes';
@@ -24,6 +25,12 @@ interface ElectronAPI {
     update: (skillId: string, updates: any) => Promise<void>;
     delete: (skillId: string) => Promise<void>;
     syncLocal: () => Promise<any>;
+  };
+  prompts: {
+    create: (config: any) => Promise<string>;
+    list: () => Promise<any[]>;
+    update: (promptId: string, updates: any) => Promise<void>;
+    delete: (promptId: string) => Promise<void>;
   };
   llm: {
     listProviders: () => Promise<any[]>;
@@ -111,6 +118,7 @@ interface ChatLaunchRequest {
   message: string;
   model?: string;
   newConversation?: boolean;
+  reuseAgentConversation?: boolean;
   autoSend?: boolean;
 }
 
@@ -254,6 +262,7 @@ function App() {
             )}
             {activeTab === 'agents' && <AgentManager />}
             {activeTab === 'skills' && <SkillManager />}
+            {activeTab === 'prompts' && <PromptManager />}
             {activeTab === 'settings' && <Settings />}
           </div>
         </div>
