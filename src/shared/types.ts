@@ -212,3 +212,31 @@ export interface DebugModelCall {
     duration?: number;
   };
 }
+
+export type DebugLogCategory = 'llm' | 'ui';
+export type DebugLogLevel = 'info' | 'warning' | 'error';
+
+export interface UIStallReport {
+  type: 'long-task' | 'event-loop';
+  source?: string;
+  duration: number;
+  startedAt?: number;
+  blockedFor?: number;
+  name?: string;
+  url?: string;
+  visibilityState?: string;
+}
+
+export interface DebugLogEntry {
+  id: string;
+  timestamp: number;
+  category: DebugLogCategory;
+  type: string;
+  level: DebugLogLevel;
+  title: string;
+  detail?: string;
+  source?: string;
+  conversationId?: string;
+  duration?: number;
+  data?: Record<string, any>;
+}

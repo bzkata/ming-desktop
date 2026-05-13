@@ -9,14 +9,17 @@ import { LLMProviderManager } from './llm/LLMProviderManager';
 import { ExecutorService } from './services/ExecutorService';
 import { ConfigManager } from './services/ConfigManager';
 import { PromptTemplateManager } from './services/PromptTemplateManager';
+import { DebugLogService } from './services/DebugLogService';
 import { ToolExecutor } from './tools/ToolExecutor';
 import { createDailyReportTool } from './tools/dailyReportTool';
 import { Logger } from './utils/Logger';
 import { initializeDatabase, closeDatabase, getDatabase } from './database/connection';
 import { runMigrations } from './database/schema';
 import { migrateFromStore } from './database/migrate-from-store';
+import type { DebugLogEntry, DebugModelCall } from '../shared/types';
 
 let mainWindow: BrowserWindow | null = null;
+let debugWindow: BrowserWindow | null = null;
 let agentManager: AgentManager;
 let skillManager: SkillManager;
 let llmManager: LLMProviderManager;
@@ -24,6 +27,7 @@ let toolExecutor: ToolExecutor;
 let executorService: ExecutorService;
 let configManager: ConfigManager;
 let promptTemplateManager: PromptTemplateManager;
+const debugLogService = new DebugLogService();
 
 // 开发环境检测：在 electron 开发模式下 NODE_ENV 可能未设置
 const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
@@ -45,15 +49,71 @@ function createWindow(): void {
   });
 
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5174');
+    loadRendererWindow(mainWindow);
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+    loadRendererWindow(mainWindow);
   }
 
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+}
+
+function loadRendererWindow(window: BrowserWindow, view?: string): void {
+  if (isDev) {
+    const suffix = view ? `?view=${encodeURIComponent(view)}` : '';
+    window.loadURL(`http://localhost:5174${suffix}`);
+  } else {
+    window.loadFile(path.join(__dirname, '../renderer/index.html'), {
+      query: view ? { view } : undefined,
+    });
+  }
+}
+
+function createDebugWindow(): void {
+  if (debugWindow && !debugWindow.isDestroyed()) {
+    debugWindow.focus();
+    return;
+  }
+
+  debugWindow = new BrowserWindow({
+    width: 1200,
+    height: 760,
+    minWidth: 900,
+    minHeight: 560,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false,
+      preload: path.join(__dirname, '../preload/index.js'),
+    },
+    title: 'Ming Debug Panel',
+    titleBarStyle: 'hiddenInset',
+    backgroundColor: '#0f172a',
+  });
+
+  loadRendererWindow(debugWindow, 'debug');
+
+  debugWindow.on('closed', () => {
+    debugWindow = null;
+  });
+}
+
+function broadcastDebugLog(entry: DebugLogEntry): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.webContents.isDestroyed()) {
+      window.webContents.send(IPCChannels.DEBUG_LOG_EVENT, entry);
+    }
+  }
+}
+
+function recordModelDebug(event: DebugModelCall, targetWebContents?: Electron.WebContents): void {
+  const entry = debugLogService.addModelCall(event);
+  if (targetWebContents && !targetWebContents.isDestroyed()) {
+    targetWebContents.send(IPCChannels.DEBUG_MODEL_CALL, event);
+  }
+  broadcastDebugLog(entry);
 }
 
 async function initializeServices(): Promise<void> {
@@ -93,7 +153,8 @@ async function initializeServices(): Promise<void> {
     configManager,
     llmManager,
     toolExecutor,
-    () => skillManager.listSkills().filter((skill) => skill.enabled)
+    () => skillManager.listSkills().filter((skill) => skill.enabled),
+    recordModelDebug
   );
   await agentManager.initialize();
 
@@ -197,13 +258,73 @@ function setupIPCHandlers(): void {
     agentManager.chatInConversationStream(conversationId, agentId, message, model, webContents);
   });
 
+  // Debug 相关
+  ipcMain.handle(IPCChannels.DEBUG_OPEN_PANEL, async () => {
+    createDebugWindow();
+  });
+
+  ipcMain.handle(IPCChannels.DEBUG_GET_LOGS, async () => {
+    return debugLogService.list();
+  });
+
+  ipcMain.handle(IPCChannels.DEBUG_CLEAR_LOGS, async () => {
+    debugLogService.clear();
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.webContents.isDestroyed()) {
+        window.webContents.send(IPCChannels.DEBUG_LOG_EVENT, { cleared: true });
+      }
+    }
+  });
+
+  ipcMain.on(IPCChannels.DEBUG_REPORT_UI_STALL, (_, report: import('../shared/types').UIStallReport) => {
+    const entry = debugLogService.addUIStall(report);
+    broadcastDebugLog(entry);
+  });
+
   // LLM Provider 相关
   ipcMain.handle(IPCChannels.LLM_LIST_PROVIDERS, async () => {
     return llmManager.listProviders();
   });
 
   ipcMain.handle(IPCChannels.LLM_CHAT, async (_, providerId: string, messages: any[]) => {
-    return llmManager.chat(providerId, messages);
+    const provider = llmManager.listProviders().find((item) => item.id === providerId);
+    const startedAt = Date.now();
+    recordModelDebug({
+      type: 'request',
+      timestamp: startedAt,
+      data: {
+        provider: provider?.name,
+        model: provider?.models[0],
+        messages: messages.map((message: any) => ({ role: message.role, content: message.content })),
+      },
+    });
+
+    try {
+      const result = await llmManager.chat(providerId, messages);
+      recordModelDebug({
+        type: 'response',
+        timestamp: Date.now(),
+        data: {
+          provider: provider?.name,
+          model: provider?.models[0],
+          content: typeof result === 'string' ? result.slice(0, 200) : `[Tool calls: ${result.toolCalls.map((tool) => tool.function.name).join(', ')}]`,
+          duration: Date.now() - startedAt,
+        },
+      });
+      return result;
+    } catch (error) {
+      recordModelDebug({
+        type: 'error',
+        timestamp: Date.now(),
+        data: {
+          provider: provider?.name,
+          model: provider?.models[0],
+          error: error instanceof Error ? error.message : String(error),
+          duration: Date.now() - startedAt,
+        },
+      });
+      throw error;
+    }
   });
 
   ipcMain.handle(IPCChannels.LLM_ADD_PROVIDER, async (_, config: any) => {

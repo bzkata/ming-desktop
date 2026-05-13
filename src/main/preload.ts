@@ -70,10 +70,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Debug API
   debug: {
+    openPanel: () => ipcRenderer.invoke(IPCChannels.DEBUG_OPEN_PANEL),
+    getLogs: () => ipcRenderer.invoke(IPCChannels.DEBUG_GET_LOGS),
+    clearLogs: () => ipcRenderer.invoke(IPCChannels.DEBUG_CLEAR_LOGS),
+    reportUIStall: (report: any) => ipcRenderer.send(IPCChannels.DEBUG_REPORT_UI_STALL, report),
     onModelCall: (callback: (data: any) => void) => {
       const listener = (_event: any, data: any) => callback(data);
       ipcRenderer.on(IPCChannels.DEBUG_MODEL_CALL, listener);
       return () => ipcRenderer.removeListener(IPCChannels.DEBUG_MODEL_CALL, listener);
+    },
+    onLogEvent: (callback: (data: any) => void) => {
+      const listener = (_event: any, data: any) => callback(data);
+      ipcRenderer.on(IPCChannels.DEBUG_LOG_EVENT, listener);
+      return () => ipcRenderer.removeListener(IPCChannels.DEBUG_LOG_EVENT, listener);
     },
   },
 
@@ -188,7 +197,12 @@ export interface ElectronAPI {
     showOpenDialog: (options: Electron.OpenDialogOptions) => Promise<Electron.OpenDialogReturnValue>;
   };
   debug: {
+    openPanel: () => Promise<void>;
+    getLogs: () => Promise<any[]>;
+    clearLogs: () => Promise<void>;
+    reportUIStall: (report: any) => void;
     onModelCall: (callback: (data: any) => void) => () => void;
+    onLogEvent: (callback: (data: any) => void) => () => void;
   };
   git: {
     scanRepos: () => Promise<{ name: string; path: string }[]>;

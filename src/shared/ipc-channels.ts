@@ -75,6 +75,11 @@ export enum IPCChannels {
 
   // Debug 相关
   DEBUG_MODEL_CALL = 'debug:model-call',
+  DEBUG_OPEN_PANEL = 'debug:open-panel',
+  DEBUG_GET_LOGS = 'debug:get-logs',
+  DEBUG_CLEAR_LOGS = 'debug:clear-logs',
+  DEBUG_LOG_EVENT = 'debug:log-event',
+  DEBUG_REPORT_UI_STALL = 'debug:report-ui-stall',
 
   // TechStack 分析相关
   ANALYZE_APP = 'analyze:app',

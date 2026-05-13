@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LayoutDashboard, MessageSquare, Bot, Settings, Sun, Moon, Monitor, Home, Search, PanelLeftClose, PanelLeft, Wrench, FileText } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, Bot, Settings, Sun, Moon, Monitor, Home, Search, PanelLeftClose, PanelLeft, Wrench, FileText, Bug } from 'lucide-react';
 import { useTheme } from '../App';
 import { Button } from './ui/button';
 import { Separator } from './ui/separator';
@@ -32,6 +32,25 @@ export default function Sidebar({ activeTab, onTabChange, collapsed: controlledC
   const cycleTheme = () => {
     const next = theme === 'dark' ? 'light' : theme === 'light' ? 'auto' : 'dark';
     setTheme(next);
+  };
+
+  const openDebugPanelFallback = () => {
+    const debugUrl = new URL(window.location.href);
+    debugUrl.searchParams.set('view', 'debug');
+    window.open(
+      debugUrl.toString(),
+      'ming-debug-panel',
+      'popup=yes,width=1200,height=760,resizable=yes,scrollbars=yes'
+    );
+  };
+
+  const openDebugPanel = async () => {
+    try {
+      await window.electronAPI?.debug?.openPanel();
+    } catch (error) {
+      console.warn('Falling back to renderer-opened debug panel window:', error);
+      openDebugPanelFallback();
+    }
   };
 
   return (
@@ -85,6 +104,15 @@ export default function Sidebar({ activeTab, onTabChange, collapsed: controlledC
         <div className={cn('flex items-center', collapsed ? 'flex-col gap-2' : 'justify-between')}>
           {!collapsed && <span className="text-xs text-muted-foreground">銘 v0.1.0</span>}
           <div className={cn('flex items-center', collapsed ? 'flex-col gap-2' : 'gap-1')}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={openDebugPanel}
+              title="Open debug panel"
+            >
+              <Bug size={16} />
+            </Button>
             <Button
               variant="ghost"
               size="icon"

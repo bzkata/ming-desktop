@@ -9,6 +9,8 @@ import SkillManager from './components/SkillManager';
 import PromptManager from './components/PromptManager';
 import Settings from './components/Settings';
 import TechStackAnalyzer from './components/TechStackAnalyzer';
+import DebugPanel from './components/DebugPanel';
+import ClientPerformanceMonitor from './components/ClientPerformanceMonitor';
 import { themePresets, defaultThemeName, applyThemePreset, type ThemePreset } from './lib/themes';
 
 interface ElectronAPI {
@@ -68,7 +70,12 @@ interface ElectronAPI {
     onStreamError: (callback: (data: any) => void) => () => void;
   };
   debug: {
+    openPanel: () => Promise<void>;
+    getLogs: () => Promise<any[]>;
+    clearLogs: () => Promise<void>;
+    reportUIStall: (report: any) => void;
     onModelCall: (callback: (data: any) => void) => () => void;
+    onLogEvent: (callback: (data: any) => void) => () => void;
   };
   dailyReport: {
     fetch: (params: any) => Promise<any>;
@@ -186,6 +193,7 @@ function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('welcome');
   const [chatLaunchRequest, setChatLaunchRequest] = useState<ChatLaunchRequest | null>(null);
+  const isDebugView = new URLSearchParams(window.location.search).get('view') === 'debug';
 
   const handleStartChat = useCallback((request: ChatLaunchRequest) => {
     setChatLaunchRequest(request);
@@ -215,6 +223,7 @@ function App() {
   if (isLoading) {
     return (
       <ThemeProvider>
+        <ClientPerformanceMonitor source={isDebugView ? 'debug-window' : 'main-window'} />
         <div className="flex items-center justify-center h-screen bg-background">
           <div className="text-center">
             <div className="text-4xl mb-4">銘</div>
@@ -228,6 +237,7 @@ function App() {
   if (loadError) {
     return (
       <ThemeProvider>
+        <ClientPerformanceMonitor source={isDebugView ? 'debug-window' : 'main-window'} />
         <div className="flex items-center justify-center h-screen bg-background">
           <div className="text-center">
             <div className="mb-2 text-destructive">启动失败</div>
@@ -240,6 +250,10 @@ function App() {
 
   return (
     <ThemeProvider>
+      <ClientPerformanceMonitor source={isDebugView ? 'debug-window' : 'main-window'} />
+      {isDebugView ? (
+        <DebugPanel />
+      ) : (
       <div className="flex h-screen bg-background">
         {/* Sidebar */}
         <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
@@ -267,6 +281,7 @@ function App() {
           </div>
         </div>
       </div>
+      )}
     </ThemeProvider>
   );
 }

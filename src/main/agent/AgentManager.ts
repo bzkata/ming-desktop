@@ -20,7 +20,8 @@ export class AgentManager extends EventEmitter {
     private configManager: ConfigManager,
     private llmManager: LLMProviderManager,
     private toolExecutor: ToolExecutor,
-    private getEnabledSkills: () => Skill[]
+    private getEnabledSkills: () => Skill[],
+    private recordDebugEvent?: (event: import('../../shared/types').DebugModelCall, webContents?: Electron.WebContents) => void
   ) {
     super();
   }
@@ -212,7 +213,29 @@ export class AgentManager extends EventEmitter {
         throw new Error('No LLM providers configured');
       }
 
+      const provider = this.llmManager.listProviders().find((item) => item.id === providerId);
+      const startedAt = Date.now();
+      this.recordDebugEvent?.({
+        type: 'request',
+        timestamp: startedAt,
+        data: {
+          provider: provider?.name,
+          model: provider?.models[0],
+          messages: messages.map(m => ({ role: m.role, content: m.content })),
+        },
+      });
+
       const response = this.ensureTextResponse(await this.llmManager.chat(providerId, messages));
+      this.recordDebugEvent?.({
+        type: 'response',
+        timestamp: Date.now(),
+        data: {
+          provider: provider?.name,
+          model: provider?.models[0],
+          content: response.slice(0, 200) + (response.length > 200 ? '...' : ''),
+          duration: Date.now() - startedAt,
+        },
+      });
 
       // Save assistant response to DB
       db.prepare(`
@@ -225,6 +248,13 @@ export class AgentManager extends EventEmitter {
       return response;
 
     } catch (error) {
+      this.recordDebugEvent?.({
+        type: 'error',
+        timestamp: Date.now(),
+        data: {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
       Logger.error(`Agent ${agent.name} chat failed:`, error);
       throw error;
     }
@@ -438,7 +468,31 @@ export class AgentManager extends EventEmitter {
         throw new Error('No LLM providers configured');
       }
 
+      const provider = this.llmManager.listProviders().find((item) => item.id === providerId);
+      const startedAt = Date.now();
+      this.recordDebugEvent?.({
+        type: 'request',
+        timestamp: startedAt,
+        conversationId,
+        data: {
+          provider: provider?.name,
+          model: model || provider?.models[0],
+          messages: messages.map(m => ({ role: m.role, content: m.content })),
+        },
+      });
+
       const response = this.ensureTextResponse(await this.llmManager.chat(providerId, messages, model));
+      this.recordDebugEvent?.({
+        type: 'response',
+        timestamp: Date.now(),
+        conversationId,
+        data: {
+          provider: provider?.name,
+          model: model || provider?.models[0],
+          content: response.slice(0, 200) + (response.length > 200 ? '...' : ''),
+          duration: Date.now() - startedAt,
+        },
+      });
 
       // Save assistant response
       db.prepare(`
@@ -450,6 +504,14 @@ export class AgentManager extends EventEmitter {
 
       return response;
     } catch (error) {
+      this.recordDebugEvent?.({
+        type: 'error',
+        timestamp: Date.now(),
+        conversationId,
+        data: {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
       Logger.error(`Conversation chat failed:`, error);
       throw error;
     }
@@ -489,12 +551,7 @@ export class AgentManager extends EventEmitter {
       const provider = this.llmManager.listProviders().find((item) => item.id === providerId);
       const resolvedModelName = resolvedModel || provider?.models[0] || '';
       const sendDebug = (event: import('../../shared/types').DebugModelCall) => {
-        if (!webContents.isDestroyed()) {
-          webContents.send(IPCChannels.DEBUG_MODEL_CALL, {
-            ...event,
-            conversationId,
-          });
-        }
+        this.recordDebugEvent?.({ ...event, conversationId }, webContents);
       };
 
       // Tool calling loop (non-streaming)
