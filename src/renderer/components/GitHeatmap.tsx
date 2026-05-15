@@ -19,7 +19,7 @@ interface GitHeatmapProps {
 }
 
 function getColorLevel(count: number): string {
-  if (count === 0) return 'bg-transparent';
+  if (count === 0) return 'bg-gray-200 dark:bg-gray-800';
   if (count <= 2) return 'bg-green-200 dark:bg-green-900';
   if (count <= 5) return 'bg-green-400 dark:bg-green-700';
   if (count <= 9) return 'bg-green-600 dark:bg-green-500';
@@ -70,14 +70,15 @@ export default function GitHeatmap({ heatmapData, isLoading }: GitHeatmapProps) 
 
     const numWeeks = cells.length / 7;
 
-    // Calculate month label positions
-    const monthLabels: { label: string; col: number }[] = [];
+    // Calculate month label positions - position at first day of each month
+    const monthLabels: { label: string; cellIndex: number }[] = [];
     let lastMonth = -1;
-    for (let week = 0; week < numWeeks; week++) {
-      const sundayDate = cells[week * 7].date;
-      const month = getMonth(sundayDate);
-      if (month !== lastMonth) {
-        monthLabels.push({ label: MONTH_LABELS[month], col: week });
+    for (let i = 0; i < cells.length; i++) {
+      const cellDate = cells[i].date;
+      const month = getMonth(cellDate);
+      // Check if this is the first day of a new month
+      if (month !== lastMonth && cellDate.getDate() === 1) {
+        monthLabels.push({ label: MONTH_LABELS[month], cellIndex: i });
         lastMonth = month;
       }
     }
@@ -86,6 +87,8 @@ export default function GitHeatmap({ heatmapData, isLoading }: GitHeatmapProps) 
   }, [heatmapData]);
 
   const numWeeks = cells.length / 7;
+  // Calculate exact grid width: cells + gaps
+  const gridWidth = numWeeks * 11 + (numWeeks - 1) * 2;
 
   if (isLoading) {
     return (
@@ -102,16 +105,20 @@ export default function GitHeatmap({ heatmapData, isLoading }: GitHeatmapProps) 
       {/* Heatmap grid */}
       <div className="relative overflow-x-auto">
         {/* Month labels */}
-        <div className="relative h-4 ml-8 mb-1" style={{ width: numWeeks * 14 }}>
-          {monthLabels.map(({ label, col }, i) => (
-            <span
-              key={i}
-              className="text-[10px] text-muted-foreground absolute"
-              style={{ left: col * 14 }}
-            >
-              {label}
-            </span>
-          ))}
+        <div className="relative h-4 ml-8 mb-1" style={{ width: gridWidth }}>
+          {monthLabels.map(({ label, cellIndex }, i) => {
+            const col = Math.floor(cellIndex / 7);
+            const leftPos = col * 13; // col * (cellWidth + gap)
+            return (
+              <span
+                key={i}
+                className="text-[10px] text-muted-foreground absolute"
+                style={{ left: leftPos }}
+              >
+                {label}
+              </span>
+            );
+          })}
         </div>
 
         {/* Grid with day labels */}
@@ -135,6 +142,7 @@ export default function GitHeatmap({ heatmapData, isLoading }: GitHeatmapProps) 
             style={{
               gridTemplateRows: 'repeat(7, 11px)',
               gridTemplateColumns: `repeat(${numWeeks}, 11px)`,
+              gridAutoFlow: 'column',
               gap: '2px',
             }}
           >
@@ -142,7 +150,7 @@ export default function GitHeatmap({ heatmapData, isLoading }: GitHeatmapProps) 
               <div
                 key={cell.dateStr}
                 className={cn(
-                  'rounded-sm cursor-pointer transition-colors',
+                  'rounded cursor-pointer transition-colors',
                   getColorLevel(cell.count)
                 )}
                 style={{ width: 11, height: 11 }}
@@ -180,11 +188,11 @@ export default function GitHeatmap({ heatmapData, isLoading }: GitHeatmapProps) 
       <div className="flex items-center justify-between mt-3 text-xs text-muted-foreground">
         <div className="flex items-center gap-1">
           <span>Less</span>
-          <div className="rounded-sm border border-border" style={{ width: 11, height: 11 }} />
-          <div className="rounded-sm bg-green-200 dark:bg-green-900" style={{ width: 11, height: 11 }} />
-          <div className="rounded-sm bg-green-400 dark:bg-green-700" style={{ width: 11, height: 11 }} />
-          <div className="rounded-sm bg-green-600 dark:bg-green-500" style={{ width: 11, height: 11 }} />
-          <div className="rounded-sm bg-green-800 dark:bg-green-400" style={{ width: 11, height: 11 }} />
+          <div className="rounded bg-gray-200 dark:bg-gray-800" style={{ width: 11, height: 11 }} />
+          <div className="rounded bg-green-200 dark:bg-green-900" style={{ width: 11, height: 11 }} />
+          <div className="rounded bg-green-400 dark:bg-green-700" style={{ width: 11, height: 11 }} />
+          <div className="rounded bg-green-600 dark:bg-green-500" style={{ width: 11, height: 11 }} />
+          <div className="rounded bg-green-800 dark:bg-green-400" style={{ width: 11, height: 11 }} />
           <span>More</span>
         </div>
 

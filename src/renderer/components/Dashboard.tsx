@@ -55,6 +55,15 @@ type HeatmapData = {
 let cachedHeatmapData: HeatmapData | null = null;
 let heatmapFetchPromise: Promise<HeatmapData | null> | null = null;
 
+// Module-level cache for stats: keyed by serialized params
+type StatsCache = {
+  key: string;
+  commits: CommitInfo[];
+  stats: { totalCommits: number; totalRepos: number };
+};
+let cachedStatsData: StatsCache | null = null;
+let statsFetchPromise: Promise<StatsCache | null> | null = null;
+
 export default function Dashboard({ onStartChat }: DashboardProps) {
   const [commits, setCommits] = useState<CommitInfo[]>([]);
   const [timeRange, setTimeRange] = useState<string>('today');
@@ -178,28 +187,59 @@ export default function Dashboard({ onStartChat }: DashboardProps) {
     return params;
   }, [timeRange, customSince, customUntil]);
 
-  const fetchStats = useCallback(async () => {
+  const fetchStats = useCallback(async (forceRefresh = false) => {
+    const params = buildReportParams();
+    const cacheKey = JSON.stringify(params);
+
+    // Return cached data immediately if available and not forcing refresh
+    if (!forceRefresh && cachedStatsData && cachedStatsData.key === cacheKey) {
+      setCommits(cachedStatsData.commits);
+      setStats(cachedStatsData.stats);
+      return;
+    }
+
+    // Deduplicate: reuse in-flight request
+    if (!forceRefresh && statsFetchPromise) {
+      setIsRefreshing(true);
+      const result = await statsFetchPromise;
+      if (result && result.key === cacheKey) {
+        setCommits(result.commits);
+        setStats(result.stats);
+      }
+      setIsRefreshing(false);
+      return;
+    }
+
     setIsRefreshing(true);
-    try {
-      const params = buildReportParams();
-      const result = await window.electronAPI.dailyReport.fetch(params);
+    statsFetchPromise = (async () => {
+      try {
+        const result = await window.electronAPI.dailyReport.fetch(params);
+        const commitList = result.commits || [];
+        const reposWithCommits = new Set(commitList.map((c: CommitInfo) => c.repo));
+        const statsResult = {
+          totalCommits: commitList.length,
+          totalRepos: reposWithCommits.size,
+        };
+        const cached: StatsCache = { key: cacheKey, commits: commitList, stats: statsResult };
+        cachedStatsData = cached;
+        return cached;
+      } catch (error) {
+        console.error('Failed to fetch stats:', error);
+        return null;
+      } finally {
+        statsFetchPromise = null;
+      }
+    })();
 
-      const commitList = result.commits || [];
-      setCommits(commitList);
-
-      // Calculate stats
-      const reposWithCommits = new Set(commitList.map((c: CommitInfo) => c.repo));
-      setStats({
-        totalCommits: commitList.length,
-        totalRepos: reposWithCommits.size,
-      });
-    } catch (error) {
-      console.error('Failed to fetch stats:', error);
+    const result = await statsFetchPromise;
+    if (result) {
+      setCommits(result.commits);
+      setStats(result.stats);
+    } else {
       setCommits([]);
       setStats({ totalCommits: 0, totalRepos: 0 });
-    } finally {
-      setIsRefreshing(false);
     }
+    setIsRefreshing(false);
   }, [buildReportParams]);
 
   useEffect(() => {
@@ -334,7 +374,7 @@ export default function Dashboard({ onStartChat }: DashboardProps) {
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              onClick={() => fetchStats()}
+              onClick={() => fetchStats(true)}
               disabled={isRefreshing}
               title="Refresh"
             >
