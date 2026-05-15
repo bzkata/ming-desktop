@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Calendar as CalendarIcon, GitBranch, FileText, TrendingUp, Play, RefreshCw, Folder, Activity, User, Plus, Minus, Copy, Check } from 'lucide-react';
+import { Calendar as CalendarIcon, GitBranch, FileText, TrendingUp, Play, RefreshCw, Folder, Activity, User, Plus, Minus, Copy, Check, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Button } from './ui/button';
@@ -160,6 +160,33 @@ export default function Dashboard({ onStartChat }: DashboardProps) {
       setGitRepos([]);
     }
   }, []);
+
+  const handleAddPath = async () => {
+    try {
+      const result = await window.electronAPI.dialog.showOpenDialog({
+        title: '选择工作目录',
+        properties: ['openDirectory', 'multiSelections'],
+      });
+      if (!result.canceled && result.filePaths.length > 0) {
+        const newPaths = [...workPaths];
+        for (const p of result.filePaths) {
+          if (!newPaths.includes(p)) {
+            newPaths.push(p);
+          }
+        }
+        setWorkPaths(newPaths);
+        await window.electronAPI.config.set('workPaths', newPaths);
+      }
+    } catch (error) {
+      console.error('Failed to open dialog:', error);
+    }
+  };
+
+  const handleRemovePath = async (index: number) => {
+    const newPaths = workPaths.filter((_, i) => i !== index);
+    setWorkPaths(newPaths);
+    await window.electronAPI.config.set('workPaths', newPaths);
+  };
 
   useEffect(() => {
     loadWorkPaths();
@@ -442,36 +469,66 @@ export default function Dashboard({ onStartChat }: DashboardProps) {
           </CardContent>
         </Card>
 
-        {/* Work Paths Info */}
-        {workPaths.length > 0 && (
-          <Card className="mb-6">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-2 mb-3">
+        {/* Work Paths Management */}
+        <Card className="mb-6">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
                 <FileText size={16} className="text-muted-foreground" />
                 <span className="text-sm font-medium text-secondary-foreground">
                   Work Paths ({workPaths.length})
                 </span>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleAddPath}
+                className="flex items-center gap-2"
+              >
+                <Plus size={14} />
+                Add Folder
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {workPaths.length === 0 ? (
+              <div className="py-6 text-center">
+                <p className="text-sm text-muted-foreground mb-3">
+                  未配置工作目录，请添加 Work Paths 以启用统计功能
+                </p>
+                <Button
+                  variant="outline"
+                  onClick={handleAddPath}
+                  className="flex items-center gap-2"
+                >
+                  <Plus size={14} />
+                  Add Folder
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
                 {workPaths.map((p, i) => (
-                  <Badge key={i} variant="secondary" className="text-xs">
-                    {p}
-                  </Badge>
+                  <div
+                    key={i}
+                    className="flex items-center gap-2 p-2.5 rounded-lg bg-[var(--surface-hover)] border border-[hsl(var(--border))]"
+                  >
+                    <Folder size={14} className="flex-shrink-0 text-muted-foreground" />
+                    <span className="flex-1 text-sm truncate text-foreground">{p}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleRemovePath(i)}
+                      className="flex-shrink-0 h-6 w-6 text-muted-foreground hover:text-destructive"
+                      title="Remove"
+                    >
+                      <X size={14} />
+                    </Button>
+                  </div>
                 ))}
               </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {workPaths.length === 0 && (
-          <Card className="mb-6 rounded-xl bg-[var(--surface)] border-warning/50">
-            <CardContent className="pt-6">
-              <p className="text-sm text-warning">
-                未配置工作目录，请在 Settings 中添加 Work Paths 以启用统计功能
-              </p>
-            </CardContent>
-          </Card>
-        )}
+            )}
+          </CardContent>
+        </Card>
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">

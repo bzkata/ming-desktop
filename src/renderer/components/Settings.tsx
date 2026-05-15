@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Save, RotateCcw, Key, Settings as SettingsIcon, Palette, Globe, FolderOpen, Plus, X } from 'lucide-react';
+import { Save, RotateCcw, Key, Palette, Globe } from 'lucide-react';
 import LLMConfiguration from './LLMConfiguration';
 import { useTheme } from './ThemeProvider';
 import { themePresets } from '@/lib/themes';
@@ -14,7 +14,6 @@ export default function Settings() {
   const { theme, setTheme: setCtxTheme, colorTheme, setColorTheme } = useTheme();
   const [language, setLanguage] = useState('zh-CN');
   const [autoUpdate, setAutoUpdate] = useState(true);
-  const [workPaths, setWorkPaths] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -26,9 +25,6 @@ export default function Settings() {
       const config = await window.electronAPI.config.getAll();
       setLanguage(config.language || 'zh-CN');
       setAutoUpdate(config.autoUpdate !== false);
-      if (Array.isArray(config.workPaths)) {
-        setWorkPaths(config.workPaths);
-      }
     } catch (error) {
       console.error('Failed to load settings:', error);
     }
@@ -39,7 +35,6 @@ export default function Settings() {
     try {
       await window.electronAPI.config.set('language', language);
       await window.electronAPI.config.set('autoUpdate', autoUpdate);
-      await window.electronAPI.config.set('workPaths', workPaths);
     } catch (error) {
       console.error('Failed to save settings:', error);
     } finally {
@@ -53,39 +48,11 @@ export default function Settings() {
         setCtxTheme('dark');
         await window.electronAPI.config.set('language', 'zh-CN');
         await window.electronAPI.config.set('autoUpdate', true);
-        await window.electronAPI.config.set('workPaths', []);
         await loadSettings();
       } catch (error) {
         console.error('Failed to reset settings:', error);
       }
     }
-  };
-
-  const handleAddPath = async () => {
-    try {
-      const result = await window.electronAPI.dialog.showOpenDialog({
-        title: '选择工作目录',
-        properties: ['openDirectory', 'multiSelections'],
-      });
-      if (!result.canceled && result.filePaths.length > 0) {
-        const newPaths = [...workPaths];
-        for (const p of result.filePaths) {
-          if (!newPaths.includes(p)) {
-            newPaths.push(p);
-          }
-        }
-        setWorkPaths(newPaths);
-        await window.electronAPI.config.set('workPaths', newPaths);
-      }
-    } catch (error) {
-      console.error('Failed to open dialog:', error);
-    }
-  };
-
-  const handleRemovePath = async (index: number) => {
-    const newPaths = workPaths.filter((_, i) => i !== index);
-    setWorkPaths(newPaths);
-    await window.electronAPI.config.set('workPaths', newPaths);
   };
 
   return (
@@ -186,58 +153,6 @@ export default function Settings() {
                 <div className="text-sm text-muted-foreground">Automatically check for updates</div>
               </div>
               <Switch checked={autoUpdate} onCheckedChange={setAutoUpdate} />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Work Paths */}
-        <Card className="mb-4 rounded-xl bg-[var(--surface)] border-[hsl(var(--border))]">
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-info/10">
-                <SettingsIcon size={18} className="text-info" />
-              </div>
-              <div>
-                <CardTitle className="text-base">Work Paths</CardTitle>
-                <CardDescription>Select your project directories for daily reports</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {workPaths.map((path, index) => (
-                <div
-                  key={index}
-                  className="flex items-center gap-2 p-3 rounded-xl bg-[var(--surface-hover)] border border-[hsl(var(--border))]"
-                >
-                  <FolderOpen size={16} className="flex-shrink-0 text-muted-foreground" />
-                  <span className="flex-1 text-sm truncate text-foreground">{path}</span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleRemovePath(index)}
-                    className="flex-shrink-0 h-7 w-7 text-muted-foreground hover:text-destructive"
-                    title="Remove"
-                  >
-                    <X size={14} />
-                  </Button>
-                </div>
-              ))}
-
-              {workPaths.length === 0 && (
-                <p className="text-sm py-2 text-muted-foreground">
-                  No paths configured. Click &quot;Add Folder&quot; to get started.
-                </p>
-              )}
-
-              <Button
-                variant="secondary"
-                onClick={handleAddPath}
-                className="flex items-center gap-2 rounded-xl"
-              >
-                <Plus size={16} />
-                Add Folder
-              </Button>
             </div>
           </CardContent>
         </Card>
