@@ -10,7 +10,7 @@ function ResizablePanelGroup({
   return (
     <Group
       className={cn(
-        'flex h-full w-full data-[panel-group-direction=vertical]:flex-col',
+        'h-full w-full',
         className
       )}
       {...props}
