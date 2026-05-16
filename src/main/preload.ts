@@ -156,6 +156,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     update: (toolId: string, updates: any) => ipcRenderer.invoke(IPCChannels.TOOL_UPDATE, toolId, updates),
     delete: (toolId: string) => ipcRenderer.invoke(IPCChannels.TOOL_DELETE, toolId),
     execute: (toolId: string, params: any) => ipcRenderer.invoke(IPCChannels.TOOL_EXECUTE, toolId, params),
+    onApprovalRequest: (callback: (data: any) => void) => {
+      const listener = (_event: any, data: any) => callback(data);
+      ipcRenderer.on(IPCChannels.TOOL_APPROVAL_REQUEST, listener);
+      return () => ipcRenderer.removeListener(IPCChannels.TOOL_APPROVAL_REQUEST, listener);
+    },
+    respondApproval: (requestId: string, approved: boolean) => {
+      ipcRenderer.send(IPCChannels.TOOL_APPROVAL_RESPONSE, requestId, approved);
+    },
   },
 });
 
@@ -252,5 +260,7 @@ export interface ElectronAPI {
     update: (toolId: string, updates: any) => Promise<void>;
     delete: (toolId: string) => Promise<void>;
     execute: (toolId: string, params: any) => Promise<{ result: string; duration: number }>;
+    onApprovalRequest: (callback: (data: any) => void) => () => void;
+    respondApproval: (requestId: string, approved: boolean) => void;
   };
 }

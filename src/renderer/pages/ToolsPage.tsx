@@ -55,16 +55,21 @@ export default function ToolsPage() {
   });
 
   const handleCreate = async () => {
-    const name = `custom-tool-${Date.now().toString(36)}`;
-    const id = await window.electronAPI.tools.create({
-      name,
-      display_name: 'New Tool',
-      description: '',
-      category: 'custom',
-      implementation_type: 'builtin',
-    });
-    await loadTools();
-    setSelectedId(id);
+    try {
+      const name = `custom-tool-${Date.now().toString(36)}`;
+      const id = await window.electronAPI.tools.create({
+        name,
+        display_name: 'New Tool',
+        description: '',
+        category: 'custom',
+        implementation_type: 'builtin',
+      });
+      await loadTools();
+      setSelectedId(id);
+    } catch (error) {
+      console.error('Failed to create tool:', error);
+      alert(`Failed to create tool: ${error instanceof Error ? error.message : String(error)}`);
+    }
   };
 
   const handleDelete = async (toolId: string) => {

@@ -97,4 +97,6 @@ export enum IPCChannels {
   TOOL_UPDATE = 'tool:update',
   TOOL_DELETE = 'tool:delete',
   TOOL_EXECUTE = 'tool:execute',
+  TOOL_APPROVAL_REQUEST = 'tool:approval-request',
+  TOOL_APPROVAL_RESPONSE = 'tool:approval-response',
 }

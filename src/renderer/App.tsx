@@ -10,6 +10,7 @@ import PromptManager from './components/PromptManager';
 import Settings from './components/Settings';
 import TechStackAnalyzer from './components/TechStackAnalyzer';
 import ToolsPage from './pages/ToolsPage';
+import ToolApprovalDialog from './components/tools/ToolApprovalDialog';
 import DebugPanel from './components/DebugPanel';
 import ClientPerformanceMonitor from './components/ClientPerformanceMonitor';
 import { ThemeProvider } from './components/ThemeProvider';
@@ -86,6 +87,7 @@ function App() {
   return (
     <ThemeProvider>
       <ClientPerformanceMonitor source={isDebugView ? 'debug-window' : 'main-window'} />
+      <ToolApprovalDialog />
       {isDebugView ? (
         <DebugPanel />
       ) : (

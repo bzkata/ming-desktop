@@ -34,6 +34,7 @@ export function createExecuteCommandTool(
 ): ToolEntry {
   return {
     definition: DEFINITION,
+    requiresApproval: true,
     handler: async (params: Record<string, any>) => {
       try {
         const command = params.command;

@@ -33,6 +33,7 @@ const DEFINITION: ToolDefinition = {
 export function createWriteFileTool(): ToolEntry {
   return {
     definition: DEFINITION,
+    requiresApproval: true,
     handler: async (params: Record<string, any>) => {
       try {
         const resolvedPath = path.resolve(params.path);
