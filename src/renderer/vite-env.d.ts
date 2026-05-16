@@ -21,6 +21,7 @@ interface Window {
       list: () => Promise<any>;
       update: (promptId: string, updates: any) => Promise<any>;
       delete: (promptId: string) => Promise<any>;
+      test: (renderedContent: string, model?: string) => Promise<string>;
     };
     conversations: {
       create: (data: any) => Promise<any>;

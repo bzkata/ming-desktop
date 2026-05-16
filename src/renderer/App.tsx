@@ -5,7 +5,7 @@ import Welcome from './components/Welcome';
 import Dashboard from './components/Dashboard';
 import AgentChat from './components/AgentChat';
 import SkillManager from './components/SkillManager';
-import PromptManager from './components/PromptManager';
+import PromptsPage from './pages/PromptsPage';
 import Settings from './components/Settings';
 import TechStackAnalyzer from './components/TechStackAnalyzer';
 import ToolsPage from './pages/ToolsPage';
@@ -112,7 +112,7 @@ function App() {
               )}
               {activeTab === 'skills' && <SkillManager />}
               {activeTab === 'tools' && <ToolsPage />}
-              {activeTab === 'prompts' && <PromptManager />}
+              {activeTab === 'prompts' && <PromptsPage />}
               {activeTab === 'settings' && <Settings />}
             </div>
           </div>
