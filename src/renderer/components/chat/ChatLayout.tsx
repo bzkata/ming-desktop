@@ -8,8 +8,15 @@ import ChatHeader from './ChatHeader';
 import ChatMessages from './ChatMessages';
 import ChatInput from './ChatInput';
 import AgentStatusBar from './AgentStatusBar';
+import VariableFillDialog from './VariableFillDialog';
 import type { LLMProvider, Conversation } from './types';
 import type { PromptTemplate } from '../../../shared/types';
+
+function extractVariables(content: string): string[] {
+  const matches = content.match(/\{(\w+)\}/g);
+  if (!matches) return [];
+  return [...new Set(matches.map((m) => m.slice(1, -1)))];
+}
 
 interface ChatLayoutProps {
   launchRequest?: any | null;
@@ -70,6 +77,9 @@ export default function ChatLayout({ launchRequest, onLaunchHandled }: ChatLayou
     selectedPromptIndex,
     setSelectedPromptIndex,
     applyPromptSuggestion,
+    pendingVariablePrompt,
+    applyVariableValues,
+    cancelVariableFill,
   } = useChatInput({ promptTemplates, isLoading });
 
   // Load initial data
@@ -281,6 +291,13 @@ export default function ChatLayout({ launchRequest, onLaunchHandled }: ChatLayou
           onApplyPromptSuggestion={applyPromptSuggestion}
         />
       </div>
+
+      <VariableFillDialog
+        open={!!pendingVariablePrompt}
+        variables={pendingVariablePrompt ? extractVariables(pendingVariablePrompt.content) : []}
+        onConfirm={applyVariableValues}
+        onCancel={cancelVariableFill}
+      />
     </div>
   );
 }

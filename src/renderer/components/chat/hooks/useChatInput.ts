@@ -1,6 +1,12 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import type { PromptSuggestion, PromptTemplate } from '../types';
 
+function extractVariables(content: string): string[] {
+  const matches = content.match(/\{(\w+)\}/g);
+  if (!matches) return [];
+  return [...new Set(matches.map((m) => m.slice(1, -1)))];
+}
+
 export function useChatInput({
   promptTemplates,
   isLoading,
@@ -12,6 +18,7 @@ export function useChatInput({
   const [selectedPromptIndex, setSelectedPromptIndex] = useState(0);
   const [tools, setTools] = useState<any[]>([]);
   const [skills, setSkills] = useState<any[]>([]);
+  const [pendingVariablePrompt, setPendingVariablePrompt] = useState<PromptSuggestion | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Load tools and skills once
@@ -76,9 +83,29 @@ export function useChatInput({
   }, [slashQuery]);
 
   const applyPromptSuggestion = useCallback((suggestion: PromptSuggestion) => {
-    setInput(suggestion.content);
+    const vars = extractVariables(suggestion.content);
+    if (vars.length > 0 && suggestion.type === 'prompt') {
+      setPendingVariablePrompt(suggestion);
+    } else {
+      setInput(suggestion.content);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    }
     setSelectedPromptIndex(0);
+  }, []);
+
+  const applyVariableValues = useCallback((values: Record<string, string>) => {
+    if (!pendingVariablePrompt) return;
+    let rendered = pendingVariablePrompt.content;
+    for (const [key, value] of Object.entries(values)) {
+      rendered = rendered.replaceAll(`{${key}}`, value);
+    }
+    setInput(rendered);
+    setPendingVariablePrompt(null);
     requestAnimationFrame(() => inputRef.current?.focus());
+  }, [pendingVariablePrompt]);
+
+  const cancelVariableFill = useCallback(() => {
+    setPendingVariablePrompt(null);
   }, []);
 
   return {
@@ -91,5 +118,8 @@ export function useChatInput({
     selectedPromptIndex,
     setSelectedPromptIndex,
     applyPromptSuggestion,
+    pendingVariablePrompt,
+    applyVariableValues,
+    cancelVariableFill,
   };
 }
