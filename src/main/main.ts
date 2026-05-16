@@ -26,6 +26,7 @@ import { initializeDatabase, closeDatabase, getDatabase } from './database/conne
 import { runMigrations } from './database/schema';
 import { migrateFromStore } from './database/migrate-from-store';
 import { GitCacheManager } from './services/GitCacheManager';
+import { scanBundles, type DetectedLibrary } from './techstack/bundleScanner';
 import type { DebugLogEntry, DebugModelCall } from '../shared/types';
 
 let mainWindow: BrowserWindow | null = null;
@@ -805,6 +806,7 @@ interface AppAnalysisResult {
   resources: { type: string; count: number };
   fileType: string;
   categorizedDependencies?: Record<string, string[]>;
+  detectedLibraries?: DetectedLibrary[];
   plistInfo?: Record<string, any>;
   runtimeProcesses?: string[];
 }
@@ -887,35 +889,24 @@ async function analyzeMacApp(appPath: string, result: AppAnalysisResult) {
 
   const categorizedDeps: Record<string, Set<string>> = {};
 
-  // Read Info.plist for app name, version, bundle ID
+  // Read Info.plist via plutil (handles binary & XML plist formats)
   const plistPath = path.join(contents, 'Info.plist');
   const plistInfo: Record<string, any> = {};
   if (fs.existsSync(plistPath)) {
     try {
-      const plistContent = fs.readFileSync(plistPath, 'utf-8');
-      const nameMatch = plistContent.match(/<key>CFBundleName<\/key>\s*<string>(.*?)<\/string>/);
-      const displayNameMatch = plistContent.match(/<key>CFBundleDisplayName<\/key>\s*<string>(.*?)<\/string>/);
-      const versionMatch = plistContent.match(/<key>CFBundleShortVersionString<\/key>\s*<string>(.*?)<\/string>/);
-      const bundleMatch = plistContent.match(/<key>CFBundleIdentifier<\/key>\s*<string>(.*?)<\/string>/);
-      const minOSMatch = plistContent.match(/<key>LSMinimumSystemVersion<\/key>\s*<string>(.*?)<\/string>/);
-      const categoryMatch = plistContent.match(/<key>LSApplicationCategoryType<\/key>\s*<string>(.*?)<\/string>/);
-      const principalClassMatch = plistContent.match(/<key>NSPrincipalClass<\/key>\s*<string>(.*?)<\/string>/);
+      const plistJson = await execAsync(`plutil -convert json -o - "${plistPath}"`);
+      const plist = JSON.parse(plistJson);
 
-      if (nameMatch) result.appName = nameMatch[1];
-      if (displayNameMatch) plistInfo.displayName = displayNameMatch[1];
-      if (versionMatch) result.version = versionMatch[1];
-      if (bundleMatch) result.bundleId = bundleMatch[1];
-      if (minOSMatch) plistInfo.minOSVersion = minOSMatch[1];
-      if (categoryMatch) plistInfo.category = categoryMatch[1].replace('public.app-category.', '');
-      if (principalClassMatch) plistInfo.principalClass = principalClassMatch[1];
+      if (plist.CFBundleName) result.appName = plist.CFBundleName;
+      if (plist.CFBundleDisplayName) plistInfo.displayName = plist.CFBundleDisplayName;
+      if (plist.CFBundleShortVersionString) result.version = plist.CFBundleShortVersionString;
+      if (plist.CFBundleIdentifier) result.bundleId = plist.CFBundleIdentifier;
+      if (plist.LSMinimumSystemVersion) plistInfo.minOSVersion = plist.LSMinimumSystemVersion;
+      if (plist.LSApplicationCategoryType) plistInfo.category = (plist.LSApplicationCategoryType as string).replace('public.app-category.', '');
+      if (plist.NSPrincipalClass) plistInfo.principalClass = plist.NSPrincipalClass;
 
-      // Check for Electron-specific plist entries
-      if (plistContent.includes('ElectronAsarIntegrity')) {
-        plistInfo.electronAsarIntegrity = true;
-      }
-      if (plistContent.includes('NSPrincipalClass') && principalClassMatch?.[1] === 'AtomApplication') {
-        plistInfo.atomBased = true;
-      }
+      if (plist.ElectronAsarIntegrity) plistInfo.electronAsarIntegrity = true;
+      if (plist.NSPrincipalClass === 'AtomApplication') plistInfo.atomBased = true;
     } catch { /* skip */ }
   }
   result.plistInfo = plistInfo;
@@ -1012,82 +1003,54 @@ async function analyzeMacApp(appPath: string, result: AppAnalysisResult) {
     } catch { /* skip */ }
   }
 
-  // Analyze asar file for dependencies (Electron apps)
+  // Bundle fingerprint scanning (Electron/Tauri apps)
   const asarPath = path.join(resourcesDir, 'app.asar');
-  if (fs.existsSync(asarPath)) {
-    try {
-      // Use strings to extract package names from asar
-      const stringsOutput = execSync(`strings "${asarPath}" 2>/dev/null | grep -E '"name": "[a-z@][a-z0-9@/-]*"' | sort -u`, { encoding: 'utf-8', timeout: 10000 });
-      const packageNames = stringsOutput.match(/"name": "([^"]+)"/g)?.map(m => m.replace(/"name": "/, '').replace(/"/, '')) || [];
+  const isAsar = fs.existsSync(asarPath);
+  const scanTarget = isAsar ? asarPath : resourcesDir;
 
-      // Categorize detected packages
-      const categories: Record<string, string[]> = {
-        'UI 框架': ['react', 'react-dom', 'vue', '@angular/core', 'svelte', 'solid-js', 'preact'],
-        'UI 组件库': ['@mui/material', '@chakra-ui/react', 'antd', '@radix-ui', 'shadcn', 'daisyui', 'element-plus', 'vant', 'vuetify', 'quasar', '@assistant-ui/react', '@diceui/shared'],
-        '状态管理': ['zustand', 'redux', '@reduxjs/toolkit', 'mobx', 'recoil', 'jotai', 'pinia', 'vuex'],
-        '路由': ['react-router-dom', '@tanstack/router', 'vue-router', 'next', 'nuxt', 'remix', 'gatsby'],
-        'AI/LLM': ['openai', '@anthropic-ai/sdk', '@anthropic-ai/claude-agent-sdk', '@modelcontextprotocol/sdk', '@agentclientprotocol/sdk', '@assistant-ui/react', 'langchain'],
-        'HTTP 客户端': ['axios', 'got', 'node-fetch', 'ky', 'superagent', 'undici', '@better-fetch/fetch'],
-        '数据库 ORM': ['prisma', '@prisma/client', 'drizzle-orm', 'typeorm', 'sequelize', 'mongoose', 'knex', 'redis', 'ioredis', '@electric-sql/pglite'],
-        '认证授权': ['jsonwebtoken', 'passport', 'bcrypt', 'oauth', 'next-auth', '@clerk', 'better-auth'],
-        '样式方案': ['tailwindcss', 'styled-components', '@emotion', 'sass', 'less', 'postcss', 'css-modules'],
-        '测试工具': ['jest', 'vitest', 'mocha', 'cypress', 'playwright', '@testing-library', 'sinon', 'chai', 'supertest'],
-        '构建工具': ['webpack', 'vite', 'esbuild', 'rollup', '@babel/core', 'swc', 'parcel', 'turbopack'],
-        '代码质量': ['eslint', 'prettier', 'stylelint', 'husky', 'lint-staged', 'commitlint'],
-        '类型检查': ['typescript', 'zod', 'joi', 'yup', 'class-validator', 'io-ts', 'ajv'],
-        '日期处理': ['dayjs', 'moment', 'date-fns', 'luxon', 'temporal'],
-        '国际化': ['i18next', 'vue-i18n', 'react-intl', '@formatjs', 'next-intl', 'react-i18next'],
-        '图表可视化': ['echarts', 'chart.js', 'd3', 'recharts', '@visx', 'antv', 'plotly'],
-        '动画库': ['framer-motion', 'gsap', 'lottie', 'animejs', '@react-spring'],
-        '文件处理': ['multer', 'sharp', 'pdf-lib', 'xlsx', 'file-saver', 'jszip'],
-        '日志工具': ['winston', 'pino', 'bunyan', 'log4js', 'debug'],
-        'WebSocket': ['socket.io', 'ws', 'graphql-ws', 'ably', 'pusher'],
-        '桌面开发': ['electron', '@tauri-apps/api', '@tauri-apps/cli', '@electron-toolkit'],
-        '移动开发': ['react-native', '@react-native', 'expo', 'capacitor', '@capacitor', 'ionic'],
-        '协作/CRDT': ['@loro-dev', 'yjs', 'automerge'],
-        '浮层/弹出': ['@floating-ui', 'tippy.js', 'popper'],
-        '拖放': ['@dnd-kit', 'react-dnd', 'react-beautiful-dnd'],
-      };
-
-      for (const pkg of packageNames) {
-        for (const [category, keywords] of Object.entries(categories)) {
-          if (keywords.some(k => pkg === k || pkg.startsWith(k + '/') || pkg.startsWith('@' + k.split('/')[0]?.replace('@', '') + '/'))) {
-            if (!categorizedDeps[category]) categorizedDeps[category] = new Set();
-            categorizedDeps[category].add(pkg);
-          }
-        }
-      }
-    } catch { /* skip asar analysis */ }
-  }
-
-  // Analyze node_modules if available
-  const nodeModulesPath = path.join(resourcesDir, 'app.asar.unpacked', 'node_modules');
-  if (fs.existsSync(nodeModulesPath)) {
-    try {
-      const modules = fs.readdirSync(nodeModulesPath).filter(d => !d.startsWith('.'));
-      for (const mod of modules) {
-        // Categorize module
-        const categories: Record<string, string[]> = {
-          '原生模块': ['cpu-features', 'ssh2', 'better-sqlite3', 'sharp', 'canvas'],
-        };
-        for (const [category, keywords] of Object.entries(categories)) {
-          if (keywords.includes(mod)) {
-            if (!categorizedDeps[category]) categorizedDeps[category] = new Set();
-            categorizedDeps[category].add(mod);
-          }
-        }
-      }
-      if (modules.length > 0) {
-        if (!categorizedDeps['原生模块']) categorizedDeps['原生模块'] = new Set();
-        modules.forEach(m => categorizedDeps['原生模块'].add(m));
-      }
-    } catch { /* skip */ }
-  }
-
-  // Convert sets to arrays
-  result.categorizedDependencies = Object.fromEntries(
-    Object.entries(categorizedDeps).map(([k, v]) => [k, Array.from(v)])
+  // Check if there are JS/CSS files worth scanning
+  const hasWebAssets = isAsar || (
+    fs.existsSync(resourcesDir) && (
+      fs.readdirSync(resourcesDir).some(f => f.endsWith('.js') || f.endsWith('.html'))
+    )
   );
+
+  if (hasWebAssets) {
+    try {
+      const libs = scanBundles(scanTarget, isAsar);
+      result.detectedLibraries = libs;
+
+      // Also scan unpacked node_modules for native modules
+      const unpackedNm = path.join(resourcesDir, 'app.asar.unpacked', 'node_modules');
+      if (fs.existsSync(unpackedNm)) {
+        const modules = fs.readdirSync(unpackedNm).filter(d => !d.startsWith('.'));
+        for (const mod of modules) {
+          libs.push({
+            name: mod,
+            category: '原生模块',
+            confidence: 'high',
+            evidence: [`app.asar.unpacked/node_modules/${mod}`],
+            source: 'node_modules',
+          });
+        }
+      }
+
+      // Build categorizedDependencies from detectedLibraries
+      const catMap: Record<string, Set<string>> = {};
+      for (const lib of libs) {
+        if (!catMap[lib.category]) catMap[lib.category] = new Set();
+        catMap[lib.category].add(lib.name);
+      }
+      result.categorizedDependencies = Object.fromEntries(
+        Object.entries(catMap).map(([k, v]) => [k, Array.from(v)])
+      );
+    } catch { /* skip bundle analysis */ }
+  } else {
+    // No web assets — convert any existing categorizedDeps
+    result.categorizedDependencies = Object.fromEntries(
+      Object.entries(categorizedDeps).map(([k, v]) => [k, Array.from(v)])
+    );
+  }
 
   // Check for running processes (if app is currently running)
   try {
@@ -1118,6 +1081,12 @@ async function analyzeProjectDir(dirPath: string): Promise<ProjectAnalysisResult
   const extCounts: Record<string, number> = {};
   const maxDepth = 4;
   const maxFiles = 5000;
+  const excludeDirs = new Set([
+    'node_modules', 'vendor', '__pycache__', '.git',
+    'target', 'build', 'dist', 'out', 'bin',
+    '.next', '.nuxt', '.output', '.cache', '.turbo',
+    'Pods', 'DerivedData', 'coverage', '.gradle', '.idea',
+  ]);
 
   function countFiles(dir: string, depth: number, total: number): number {
     if (depth <= 0 || total >= maxFiles) return total;
@@ -1125,7 +1094,7 @@ async function analyzeProjectDir(dirPath: string): Promise<ProjectAnalysisResult
       const entries = fs.readdirSync(dir, { withFileTypes: true });
       for (const entry of entries) {
         if (total >= maxFiles) break;
-        if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'vendor' || entry.name === '__pycache__' || entry.name === '.git') continue;
+        if (entry.name.startsWith('.') || excludeDirs.has(entry.name)) continue;
         const fullPath = path.join(dir, entry.name);
         if (entry.isDirectory()) {
           total = countFiles(fullPath, depth - 1, total);

@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { PackageOpen, FolderSearch, Loader2, Upload, FileCode, Layers, Cpu, Wrench, Box, Layers3, Activity, Copy, Check } from 'lucide-react';
+import { PackageOpen, FolderSearch, Loader2, Upload, FileCode, Layers, Cpu, Wrench, Box, Layers3, Activity, Copy, Check, Eye, FileJson, Code, Palette } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -11,6 +11,15 @@ interface FrameworkDetection {
   evidence: string[];
 }
 
+interface DetectedLibrary {
+  name: string;
+  category: string;
+  confidence: 'high' | 'medium' | 'low';
+  evidence: string[];
+  source: 'package.json' | 'fingerprint-js' | 'fingerprint-css' | 'node_modules';
+  version?: string;
+}
+
 interface AppAnalysisResult {
   appName: string;
   version?: string;
@@ -19,6 +28,7 @@ interface AppAnalysisResult {
   resources: { type: string; count: number };
   fileType: string;
   categorizedDependencies?: Record<string, string[]>;
+  detectedLibraries?: DetectedLibrary[];
   plistInfo?: Record<string, any>;
   runtimeProcesses?: string[];
 }
@@ -54,6 +64,22 @@ function SectionTitle({ icon: Icon, title }: { icon: any, title: string }) {
   );
 }
 
+const SOURCE_LABELS: Record<string, { label: string; icon: any }> = {
+  'package.json': { label: 'pkg', icon: FileJson },
+  'fingerprint-js': { label: 'JS', icon: Code },
+  'fingerprint-css': { label: 'CSS', icon: Palette },
+  'node_modules': { label: 'mod', icon: Box },
+};
+
+function SourceBadge({ source }: { source: string }) {
+  const info = SOURCE_LABELS[source] || { label: source, icon: Eye };
+  return (
+    <Badge variant="outline" className="text-[10px] px-1.5 py-0 gap-0.5 font-mono">
+      {info.label}
+    </Badge>
+  );
+}
+
 function generateAppMarkdown(result: AppAnalysisResult): string {
   let md = `# ${result.appName}`;
   if (result.version) md += ` v${result.version}`;
@@ -79,19 +105,27 @@ function generateAppMarkdown(result: AppAnalysisResult): string {
     md += '\n';
   }
 
+  if (result.detectedLibraries && result.detectedLibraries.length > 0) {
+    md += '## 技术栈详情\n\n';
+    // Group by category
+    const byCategory: Record<string, DetectedLibrary[]> = {};
+    for (const lib of result.detectedLibraries) {
+      if (!byCategory[lib.category]) byCategory[lib.category] = [];
+      byCategory[lib.category].push(lib);
+    }
+    for (const [category, libs] of Object.entries(byCategory)) {
+      md += `### ${category}\n\n`;
+      for (const lib of libs) {
+        md += `- **${lib.name}**${lib.version ? ` v${lib.version}` : ''} (${lib.confidence}, via ${lib.source})\n`;
+      }
+      md += '\n';
+    }
+  }
+
   if (result.resources.type) {
     md += '## Resources\n\n';
     md += `- Type: ${result.resources.type}\n`;
     md += `- Total files: ${result.resources.count}\n\n`;
-  }
-
-  if (result.categorizedDependencies && Object.keys(result.categorizedDependencies).length > 0) {
-    md += '## 技术栈分类\n\n';
-    Object.entries(result.categorizedDependencies).forEach(([category, deps]) => {
-      md += `### ${category}\n\n`;
-      deps.forEach(dep => md += `- ${dep}\n`);
-      md += '\n';
-    });
   }
 
   if (result.runtimeProcesses && result.runtimeProcesses.length > 0) {
@@ -230,6 +264,43 @@ function AppResult({ result }: { result: AppAnalysisResult }) {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Detected Libraries — detailed fingerprint results */}
+      {result.detectedLibraries && result.detectedLibraries.length > 0 && (
+        <div className="space-y-3">
+          <SectionTitle icon={Eye} title="技术栈详情" />
+          <div className="text-xs text-muted-foreground mb-2">
+            通过 package.json、JS/CSS 指纹扫描检测到 {result.detectedLibraries.length} 个库
+          </div>
+          {(() => {
+            const byCategory: Record<string, DetectedLibrary[]> = {};
+            for (const lib of result.detectedLibraries) {
+              if (!byCategory[lib.category]) byCategory[lib.category] = [];
+              byCategory[lib.category].push(lib);
+            }
+            return Object.entries(byCategory).map(([category, libs]) => (
+              <div key={category} className="rounded-lg border bg-card p-4 space-y-2">
+                <div className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  {category}
+                  <Badge variant="secondary" className="text-[10px] px-1.5">{libs.length}</Badge>
+                </div>
+                <div className="space-y-1">
+                  {libs.map(lib => (
+                    <div key={lib.name} className="flex items-center gap-2 py-1 px-2 rounded hover:bg-muted/30 text-sm">
+                      <span className="font-medium flex-1">{lib.name}</span>
+                      {lib.version && (
+                        <span className="text-xs text-muted-foreground font-mono">{lib.version}</span>
+                      )}
+                      <SourceBadge source={lib.source} />
+                      <ConfidenceBadge level={lib.confidence} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ));
+          })()}
         </div>
       )}
 
