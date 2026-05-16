@@ -44,7 +44,12 @@ const DEFINITION: ToolDefinition = {
         },
         author: {
           type: 'string',
-          description: '按 Git 作者过滤。默认自动使用当前 git 用户名，一般无需指定',
+          description: '按 Git 作者过滤（单个）。默认自动使用当前 git 用户名，一般无需指定',
+        },
+        authors: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '按 Git 作者过滤（多个，OR 匹配）。优先于 author 字段',
         },
       },
     },
@@ -80,8 +85,19 @@ export function createDailyReportTool(
       if (params.sinceDate) env.SINCE_DATE = params.sinceDate;
       if (params.untilDate) env.UNTIL_DATE = params.untilDate;
 
-      const author = params.author || await getGitUsername(executorService);
-      if (author) env.FILTER_BY_AUTHOR = author;
+      // Resolve authors: prefer authors[] over single author
+      let resolvedAuthors: string[] = [];
+      if (Array.isArray(params.authors) && params.authors.length > 0) {
+        resolvedAuthors = params.authors.filter(Boolean);
+      } else if (params.author) {
+        resolvedAuthors = [params.author];
+      } else {
+        const gitUser = await getGitUsername(executorService);
+        if (gitUser) resolvedAuthors = [gitUser];
+      }
+      if (resolvedAuthors.length > 0) {
+        env.FILTER_BY_AUTHORS = resolvedAuthors.join(',');
+      }
 
       const result = await executorService.executeCommand(`python3 ${scriptPath}`, {
         cwd: home || undefined,
