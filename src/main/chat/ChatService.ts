@@ -45,6 +45,7 @@ export class ChatService {
     userMessage: string,
     model: string | undefined,
     webContents: WebContents,
+    injectedSkills?: string[],
   ): Promise<void> {
     const db = getDatabase();
 
@@ -101,6 +102,7 @@ export class ChatService {
         userMessage,
         agentId: agentId || undefined,
         model,
+        injectedSkills,
       };
 
       await this.chatEngine.chatStream(req, callbacks, abortController.signal);

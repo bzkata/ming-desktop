@@ -297,9 +297,9 @@ function setupIPCHandlers(): void {
     return agentManager.renameConversation(conversationId, title);
   });
 
-  ipcMain.on(IPCChannels.CONVERSATION_CHAT, (event, conversationId: string, agentId: string | null, message: string, model?: string) => {
+  ipcMain.on(IPCChannels.CONVERSATION_CHAT, (event, conversationId: string, agentId: string | null, message: string, model?: string, injectedSkills?: string[]) => {
     const webContents = event.sender;
-    chatService.handleChat(conversationId, agentId || null, message, model, webContents);
+    chatService.handleChat(conversationId, agentId || null, message, model, webContents, injectedSkills);
   });
 
   ipcMain.on(IPCChannels.CONVERSATION_CHAT_ABORT, (_, conversationId: string) => {
