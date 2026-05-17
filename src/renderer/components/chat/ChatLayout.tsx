@@ -74,7 +74,7 @@ export default function ChatLayout({ launchRequest, onLaunchHandled }: ChatLayou
   const handleActivateSkill = useCallback(async (skillId: string) => {
     let convId = currentConversationId;
     if (!convId) {
-      const conv = await window.electronAPI.conversations.create({});
+      const conv = await window.electronAPI.conversations.create();
       convId = conv.id;
       setConversations(prev => [conv, ...prev]);
       setCurrentConversationId(convId);

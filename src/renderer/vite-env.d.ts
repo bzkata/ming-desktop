@@ -24,13 +24,13 @@ interface Window {
       test: (renderedContent: string, model?: string) => Promise<string>;
     };
     conversations: {
-      create: (data: any) => Promise<any>;
+      create: () => Promise<any>;
       list: () => Promise<any>;
       messages: (conversationId: string) => Promise<any>;
       delete: (conversationId: string) => Promise<any>;
       rename: (conversationId: string, title: string) => Promise<any>;
-      chat: (conversationId: string, message: string, options?: any) => Promise<any>;
-      abort: (conversationId: string) => Promise<any>;
+      chat: (conversationId: string, agentId: string | null, message: string, model?: string, injectedSkills?: string[]) => void;
+      abort: (conversationId: string) => void;
       onStreamChunk: (callback: (data: any) => void) => () => void;
       onStreamEnd: (callback: (data: any) => void) => () => void;
       onStreamError: (callback: (data: any) => void) => () => void;
