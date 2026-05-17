@@ -91,5 +91,18 @@ interface Window {
       delete: (toolId: string) => Promise<void>;
       execute: (toolId: string, params: any) => Promise<{ result: string; duration: number }>;
     };
+    mcpServers: {
+      list: () => Promise<any[]>;
+      get: (serverId: string) => Promise<any>;
+      create: (config: any) => Promise<string>;
+      update: (serverId: string, updates: any) => Promise<void>;
+      delete: (serverId: string) => Promise<void>;
+      connect: (serverId: string) => Promise<void>;
+      disconnect: (serverId: string) => Promise<void>;
+      refreshTools: (serverId: string) => Promise<any[]>;
+      callTool: (serverId: string, toolName: string, args: any) => Promise<any>;
+      onStatusChange: (callback: (data: any) => void) => () => void;
+      onToolsChange: (callback: (data: any) => void) => () => void;
+    };
   };
 }
