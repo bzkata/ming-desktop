@@ -103,4 +103,23 @@ export enum IPCChannels {
   TOOL_EXECUTE = 'tool:execute',
   TOOL_APPROVAL_REQUEST = 'tool:approval-request',
   TOOL_APPROVAL_RESPONSE = 'tool:approval-response',
+
+  // MCP Server 相关
+  MCP_SERVER_LIST = 'mcp-server:list',
+  MCP_SERVER_GET = 'mcp-server:get',
+  MCP_SERVER_CREATE = 'mcp-server:create',
+  MCP_SERVER_UPDATE = 'mcp-server:update',
+  MCP_SERVER_DELETE = 'mcp-server:delete',
+  MCP_SERVER_CONNECT = 'mcp-server:connect',
+  MCP_SERVER_DISCONNECT = 'mcp-server:disconnect',
+  MCP_SERVER_REFRESH_TOOLS = 'mcp-server:refresh-tools',
+  MCP_SERVER_CALL_TOOL = 'mcp-server:call-tool',
+  MCP_SERVER_STATUS_EVENT = 'mcp-server:status-event',
+  MCP_SERVER_TOOLS_EVENT = 'mcp-server:tools-event',
+
+  // MCP Debug 相关
+  MCP_DEBUG_LOGS = 'mcp-debug:logs',
+  MCP_DEBUG_CLEAR = 'mcp-debug:clear',
+  MCP_DEBUG_EXPORT = 'mcp-debug:export',
+  MCP_DEBUG_LOG_EVENT = 'mcp-debug:log-event',
 }
