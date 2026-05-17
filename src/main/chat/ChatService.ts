@@ -7,6 +7,7 @@ import { ToolExecutor } from '../tools/ToolExecutor';
 import { SkillManager } from '../skill/SkillManager';
 import { AgentManager } from '../agent/AgentManager';
 import { getDatabase } from '../database/connection';
+import { MemoryManager } from '../services/MemoryManager';
 import { Logger } from '../utils/Logger';
 
 export class ChatService {
@@ -18,6 +19,7 @@ export class ChatService {
     private skillManager: SkillManager,
     llmManager: LLMProviderManager,
     toolExecutor: ToolExecutor,
+    private memoryManager: MemoryManager,
     private recordDebugEvent?: (event: DebugModelCall, webContents?: WebContents) => void,
   ) {
     this.chatEngine = new ChatEngine(
@@ -36,6 +38,7 @@ export class ChatService {
         `).all(conversationId, limit) as any[];
         return rows.reverse().map(r => ({ role: r.role, content: r.content, timestamp: r.timestamp }));
       },
+      () => memoryManager.formatMemoriesForPrompt(),
     );
   }
 

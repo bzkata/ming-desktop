@@ -409,4 +409,23 @@ export function runMigrations(): void {
     db.exec(`ALTER TABLE skills ADD COLUMN auto_message TEXT DEFAULT NULL`);
     db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(migration14Name);
   }
+
+  // Migration: add memories table
+  const migration15Name = 'add-memories';
+  const applied15 = db.prepare('SELECT 1 FROM _migrations WHERE name = ?').get(migration15Name);
+  if (!applied15) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS memories (
+        id TEXT PRIMARY KEY,
+        content TEXT NOT NULL,
+        category TEXT NOT NULL CHECK(category IN ('profile', 'preference', 'context', 'custom')),
+        source TEXT NOT NULL DEFAULT 'manual' CHECK(source IN ('manual', 'agent_suggested')),
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'archived')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_memories_status ON memories(status);
+    `);
+    db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(migration15Name);
+  }
 }

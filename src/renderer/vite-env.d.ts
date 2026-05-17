@@ -110,5 +110,13 @@ interface Window {
       exportLogs: (serverId?: string) => Promise<string>;
       onLogEvent: (callback: (data: any) => void) => () => void;
     };
+    memories: {
+      list: (filters?: any) => Promise<any[]>;
+      get: (id: string) => Promise<any>;
+      create: (data: any) => Promise<any>;
+      update: (id: string, data: any) => Promise<any>;
+      delete: (id: string) => Promise<void>;
+      preview: () => Promise<{ text: string; tokens: number }>;
+    };
   };
 }

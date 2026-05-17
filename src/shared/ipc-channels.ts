@@ -122,4 +122,12 @@ export enum IPCChannels {
   MCP_DEBUG_CLEAR = 'mcp-debug:clear',
   MCP_DEBUG_EXPORT = 'mcp-debug:export',
   MCP_DEBUG_LOG_EVENT = 'mcp-debug:log-event',
+
+  // Memory 相关
+  MEMORY_LIST = 'memory:list',
+  MEMORY_GET = 'memory:get',
+  MEMORY_CREATE = 'memory:create',
+  MEMORY_UPDATE = 'memory:update',
+  MEMORY_DELETE = 'memory:delete',
+  MEMORY_PREVIEW = 'memory:preview',
 }

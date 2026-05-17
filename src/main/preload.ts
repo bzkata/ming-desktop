@@ -210,6 +210,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return () => ipcRenderer.removeListener(IPCChannels.MCP_DEBUG_LOG_EVENT, listener);
     },
   },
+
+  // Memory API
+  memories: {
+    list: (filters?: any) => ipcRenderer.invoke(IPCChannels.MEMORY_LIST, filters),
+    get: (id: string) => ipcRenderer.invoke(IPCChannels.MEMORY_GET, id),
+    create: (data: any) => ipcRenderer.invoke(IPCChannels.MEMORY_CREATE, data),
+    update: (id: string, data: any) => ipcRenderer.invoke(IPCChannels.MEMORY_UPDATE, id, data),
+    delete: (id: string) => ipcRenderer.invoke(IPCChannels.MEMORY_DELETE, id),
+    preview: () => ipcRenderer.invoke(IPCChannels.MEMORY_PREVIEW),
+  },
 });
 
 // 类型定义
@@ -330,5 +340,13 @@ export interface ElectronAPI {
     clearLogs: (serverId?: string) => Promise<void>;
     exportLogs: (serverId?: string) => Promise<string>;
     onLogEvent: (callback: (data: any) => void) => () => void;
+  };
+  memories: {
+    list: (filters?: any) => Promise<any[]>;
+    get: (id: string) => Promise<any>;
+    create: (data: any) => Promise<any>;
+    update: (id: string, data: any) => Promise<any>;
+    delete: (id: string) => Promise<void>;
+    preview: () => Promise<{ text: string; tokens: number }>;
   };
 }

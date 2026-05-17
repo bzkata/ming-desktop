@@ -20,6 +20,8 @@ import { createListDirectoryTool } from './tools/listDirectoryTool';
 import { createWriteFileTool } from './tools/writeFileTool';
 import { createExecuteCommandTool } from './tools/executeCommandTool';
 import { createSearchFilesTool } from './tools/searchFilesTool';
+import { createSuggestMemoryTool } from './tools/suggestMemoryTool';
+import { createRecallMemoriesTool } from './tools/recallMemoriesTool';
 import { ToolApprovalManager } from './tools/toolApproval';
 import { Logger } from './utils/Logger';
 import { initializeDatabase, closeDatabase, getDatabase } from './database/connection';
@@ -29,6 +31,7 @@ import { GitCacheManager } from './services/GitCacheManager';
 import { scanBundles, type DetectedLibrary } from './techstack/bundleScanner';
 import { ChatService } from './chat/ChatService';
 import { MCPManager } from './mcp/MCPManager';
+import { MemoryManager } from './services/MemoryManager';
 import type { DebugLogEntry, DebugModelCall } from '../shared/types';
 
 let mainWindow: BrowserWindow | null = null;
@@ -44,6 +47,7 @@ let configManager: ConfigManager;
 let promptTemplateManager: PromptTemplateManager;
 const debugLogService = new DebugLogService();
 let mcpManager: MCPManager;
+let memoryManager: MemoryManager;
 
 // 开发环境检测：在 electron 开发模式下 NODE_ENV 可能未设置
 const isDev = !app.isPackaged || process.env.NODE_ENV === 'development';
@@ -164,6 +168,8 @@ async function initializeServices(): Promise<void> {
   toolExecutor.register(createWriteFileTool());
   toolExecutor.register(createExecuteCommandTool(executorService));
   toolExecutor.register(createSearchFilesTool());
+  toolExecutor.register(createSuggestMemoryTool(() => memoryManager));
+  toolExecutor.register(createRecallMemoriesTool(() => memoryManager));
 
   const toolApprovalManager = new ToolApprovalManager();
   toolExecutor.setApprovalManager(toolApprovalManager);
@@ -178,6 +184,9 @@ async function initializeServices(): Promise<void> {
   promptTemplateManager = new PromptTemplateManager();
   promptTemplateManager.initialize();
 
+  // 初始化 Memory 管理器
+  memoryManager = new MemoryManager();
+
   // 初始化 Agent 管理器
   agentManager = new AgentManager(
     configManager,
@@ -188,7 +197,7 @@ async function initializeServices(): Promise<void> {
   );
   await agentManager.initialize();
 
-  chatService = new ChatService(agentManager, skillManager, llmManager, toolExecutor, recordModelDebug);
+  chatService = new ChatService(agentManager, skillManager, llmManager, toolExecutor, memoryManager, recordModelDebug);
 
   // 初始化 MCP 管理器
   mcpManager = new MCPManager();
@@ -880,6 +889,35 @@ function setupIPCHandlers(): void {
   mcpManager.on('server-tools', () => syncMcpTools());
   mcpManager.on('server-deleted', () => syncMcpTools());
   mcpManager.on('server-status', () => syncMcpTools());
+
+  // Memory 相关
+  ipcMain.handle(IPCChannels.MEMORY_LIST, async (_, filters?: any) => {
+    return memoryManager.list(filters);
+  });
+
+  ipcMain.handle(IPCChannels.MEMORY_GET, async (_, id: string) => {
+    return memoryManager.get(id);
+  });
+
+  ipcMain.handle(IPCChannels.MEMORY_CREATE, async (_, data: any) => {
+    return memoryManager.create(data);
+  });
+
+  ipcMain.handle(IPCChannels.MEMORY_UPDATE, async (_, id: string, data: any) => {
+    return memoryManager.update(id, data);
+  });
+
+  ipcMain.handle(IPCChannels.MEMORY_DELETE, async (_, id: string) => {
+    memoryManager.delete(id);
+    return { success: true };
+  });
+
+  ipcMain.handle(IPCChannels.MEMORY_PREVIEW, async () => {
+    return {
+      text: memoryManager.formatMemoriesForPrompt(),
+      tokens: memoryManager.estimateTokens(),
+    };
+  });
 
   Logger.info('IPC handlers registered');
 }

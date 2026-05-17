@@ -11,6 +11,7 @@ import DeveloperToolsPage from './components/DeveloperToolsPage';
 import ToolsPage from './pages/ToolsPage';
 import McpServersPage from './pages/McpServersPage';
 import McpDebugPage from './pages/McpDebugPage';
+import MemoryPage from './pages/MemoryPage';
 import ToolApprovalDialog from './components/tools/ToolApprovalDialog';
 import DebugPanel from './components/DebugPanel';
 import ClientPerformanceMonitor from './components/ClientPerformanceMonitor';
@@ -119,6 +120,7 @@ function App() {
               {activeTab === 'mcp-servers' && <McpServersPage />}
               {activeTab === 'mcp-debug' && <McpDebugPage />}
               {activeTab === 'prompts' && <PromptsPage />}
+              {activeTab === 'memories' && <MemoryPage />}
               {activeTab === 'settings' && <Settings />}
             </div>
           </div>
