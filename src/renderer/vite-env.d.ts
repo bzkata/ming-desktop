@@ -104,5 +104,11 @@ interface Window {
       onStatusChange: (callback: (data: any) => void) => () => void;
       onToolsChange: (callback: (data: any) => void) => () => void;
     };
+    mcpDebug: {
+      getLogs: (serverId?: string) => Promise<any[]>;
+      clearLogs: (serverId?: string) => Promise<void>;
+      exportLogs: (serverId?: string) => Promise<string>;
+      onLogEvent: (callback: (data: any) => void) => () => void;
+    };
   };
 }
