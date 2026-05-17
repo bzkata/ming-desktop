@@ -1,4 +1,5 @@
-import { Send, Square, Cpu, FileText, Wrench, Zap } from 'lucide-react';
+import { useEffect, useRef } from 'react';
+import { Send, Square, Cpu, FileText, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -52,61 +53,19 @@ export default function ChatInput({
     textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
   };
 
-  // Group suggestions by type
-  const groupedSuggestions = () => {
-    const tools = promptSuggestions.filter(s => s.type === 'tool');
-    const others = promptSuggestions.filter(s => s.type !== 'tool');
-    return { tools, others };
-  };
+  // Refs for scroll-into-view on keyboard navigation
+  const itemRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
+
+  useEffect(() => {
+    const el = itemRefs.current.get(selectedPromptIndex);
+    el?.scrollIntoView({ block: 'nearest' });
+  }, [selectedPromptIndex]);
 
   const getIconForType = (type: string) => {
     switch (type) {
-      case 'tool': return <Wrench size={15} />;
       case 'skill': return <Zap size={15} />;
       default: return <FileText size={15} />;
     }
-  };
-
-  const renderGroup = (items: PromptSuggestion[], groupLabel?: string) => {
-    const result: React.ReactNode[] = [];
-    if (groupLabel && items.length > 0) {
-      result.push(
-        <div key={`header-${groupLabel}`} className="px-3 py-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-          {groupLabel}
-        </div>
-      );
-    }
-    items.forEach((suggestion, i) => {
-      const globalIndex = promptSuggestions.indexOf(suggestion);
-      result.push(
-        <button
-          key={suggestion.id}
-          type="button"
-          className={cn(
-            'w-full flex items-start gap-3 px-3 py-2.5 text-left transition-colors',
-            globalIndex === selectedPromptIndex ? 'bg-primary/10 text-foreground' : 'hover:bg-[var(--surface-hover)]'
-          )}
-          onMouseDown={(event) => {
-            event.preventDefault();
-            onApplyPromptSuggestion(suggestion);
-          }}
-        >
-          <span className="mt-0.5 text-muted-foreground shrink-0">{getIconForType(suggestion.type)}</span>
-          <span className="min-w-0 flex-1">
-            <span className="flex items-center gap-2">
-              <span className="font-medium text-sm truncate">{suggestion.name}</span>
-              <span className="font-mono text-[11px] text-muted-foreground shrink-0">/{suggestion.trigger}</span>
-            </span>
-            {suggestion.description && (
-              <span className="block text-xs text-muted-foreground truncate mt-0.5">
-                {suggestion.description}
-              </span>
-            )}
-          </span>
-        </button>
-      );
-    });
-    return result;
   };
 
   return (
@@ -137,9 +96,7 @@ export default function ChatInput({
         <div className="relative flex gap-3">
           {/* Slash menu */}
           <AnimatePresence>
-            {promptMenuOpen && (() => {
-              const { tools, others } = groupedSuggestions();
-              return (
+            {promptMenuOpen && (
                 <motion.div
                   initial={{ opacity: 0, y: 8, scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -147,11 +104,38 @@ export default function ChatInput({
                   transition={{ duration: 0.15 }}
                   className="absolute left-0 right-14 bottom-full mb-3 rounded-xl border border-[hsl(var(--border))] bg-[var(--surface)] text-foreground shadow-xl overflow-hidden z-50 max-h-[300px] overflow-y-auto"
                 >
-                  {renderGroup(tools, 'Tools')}
-                  {renderGroup(others, 'Skills & Prompts')}
+                  {promptSuggestions.map((suggestion, index) => (
+                    <button
+                      key={suggestion.id}
+                      ref={(el) => {
+                        if (el) itemRefs.current.set(index, el);
+                      }}
+                      type="button"
+                      className={cn(
+                        'w-full flex items-start gap-3 px-3 py-2.5 text-left transition-colors',
+                        index === selectedPromptIndex ? 'bg-primary/10 text-foreground' : 'hover:bg-[var(--surface-hover)]'
+                      )}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        onApplyPromptSuggestion(suggestion);
+                      }}
+                    >
+                      <span className="mt-0.5 text-muted-foreground shrink-0">{getIconForType(suggestion.type)}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-2">
+                          <span className="font-medium text-sm truncate">{suggestion.name}</span>
+                          <span className="font-mono text-[11px] text-muted-foreground shrink-0">/{suggestion.trigger}</span>
+                        </span>
+                        {suggestion.description && (
+                          <span className="block text-xs text-muted-foreground truncate mt-0.5">
+                            {suggestion.description}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  ))}
                 </motion.div>
-              );
-            })()}
+              )}
           </AnimatePresence>
 
           <textarea

@@ -4,6 +4,7 @@ import { ToolDefinition } from '../../shared/types';
 import { ToolEntry } from './ToolExecutor';
 import { ExecutorService } from '../services/ExecutorService';
 import { ConfigManager } from '../services/ConfigManager';
+import { getDatabase } from '../database/connection';
 import { Logger } from '../utils/Logger';
 
 async function getGitUsername(executorService: ExecutorService): Promise<string> {
@@ -85,15 +86,24 @@ export function createDailyReportTool(
       if (params.sinceDate) env.SINCE_DATE = params.sinceDate;
       if (params.untilDate) env.UNTIL_DATE = params.untilDate;
 
-      // Resolve authors: prefer authors[] over single author
+      // Resolve authors: prefer authors[] > single author > user_identities > git config
       let resolvedAuthors: string[] = [];
       if (Array.isArray(params.authors) && params.authors.length > 0) {
         resolvedAuthors = params.authors.filter(Boolean);
       } else if (params.author) {
         resolvedAuthors = [params.author];
       } else {
-        const gitUser = await getGitUsername(executorService);
-        if (gitUser) resolvedAuthors = [gitUser];
+        try {
+          const db = getDatabase();
+          const rows = db.prepare('SELECT name FROM user_identities').all() as { name: string }[];
+          if (rows.length > 0) {
+            resolvedAuthors = rows.map(r => r.name);
+          }
+        } catch {}
+        if (resolvedAuthors.length === 0) {
+          const gitUser = await getGitUsername(executorService);
+          if (gitUser) resolvedAuthors = [gitUser];
+        }
       }
       if (resolvedAuthors.length > 0) {
         env.FILTER_BY_AUTHORS = resolvedAuthors.join(',');

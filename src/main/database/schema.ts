@@ -401,4 +401,12 @@ export function runMigrations(): void {
     `);
     db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(migration13Name);
   }
+
+  // Migration: add auto_message column to skills
+  const migration14Name = 'add-skill-auto-message';
+  const applied14 = db.prepare('SELECT 1 FROM _migrations WHERE name = ?').get(migration14Name);
+  if (!applied14) {
+    db.exec(`ALTER TABLE skills ADD COLUMN auto_message TEXT DEFAULT NULL`);
+    db.prepare('INSERT INTO _migrations (name) VALUES (?)').run(migration14Name);
+  }
 }

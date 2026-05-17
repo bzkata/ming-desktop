@@ -71,7 +71,7 @@ export default function ChatLayout({ launchRequest, onLaunchHandled }: ChatLayou
     loadConversations,
   });
 
-  const handleActivateSkill = useCallback(async (skillId: string) => {
+  const handleActivateSkill = useCallback(async (skillId: string, autoMessage?: string) => {
     let convId = currentConversationId;
     if (!convId) {
       const conv = await window.electronAPI.conversations.create();
@@ -80,7 +80,14 @@ export default function ChatLayout({ launchRequest, onLaunchHandled }: ChatLayou
       setCurrentConversationId(convId);
     }
     activateSkill(convId!, skillId);
-  }, [currentConversationId, activateSkill, setConversations, setCurrentConversationId]);
+    if (autoMessage) {
+      await sendConversationMessage({
+        message: autoMessage,
+        model: selectedModel || undefined,
+        extraSkillIds: [skillId],
+      });
+    }
+  }, [currentConversationId, activateSkill, setConversations, setCurrentConversationId, sendConversationMessage, selectedModel]);
 
   const {
     input,

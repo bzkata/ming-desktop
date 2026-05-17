@@ -14,20 +14,16 @@ export function useChatInput({
 }: {
   promptTemplates: PromptTemplate[];
   isLoading: boolean;
-  onActivateSkill?: (skillId: string) => void;
+  onActivateSkill?: (skillId: string, autoMessage?: string) => void;
 }) {
   const [input, setInput] = useState('');
   const [selectedPromptIndex, setSelectedPromptIndex] = useState(0);
-  const [tools, setTools] = useState<any[]>([]);
   const [skills, setSkills] = useState<any[]>([]);
   const [pendingVariablePrompt, setPendingVariablePrompt] = useState<PromptSuggestion | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Load tools and skills once
+  // Load skills once
   useEffect(() => {
-    window.electronAPI.tools.list().then((list: any[]) => {
-      setTools(list.filter(t => t.is_enabled));
-    }).catch(() => {});
     window.electronAPI.skills.list().then((list: any[]) => {
       setSkills(list.filter((s: any) => s.enabled));
     }).catch(() => {});
@@ -37,15 +33,6 @@ export function useChatInput({
 
   const promptSuggestions = useMemo<PromptSuggestion[]>(() => {
     if (slashQuery === null) return [];
-
-    const toolItems: PromptSuggestion[] = tools.map((tool) => ({
-      id: `tool-${tool.name}`,
-      name: tool.display_name || tool.name,
-      trigger: tool.name,
-      description: tool.description || '',
-      content: `/${tool.name} `,
-      type: 'tool' as const,
-    }));
 
     const skillItems: PromptSuggestion[] = skills.map((skill) => ({
       id: `skill-${skill.id}`,
@@ -67,7 +54,7 @@ export function useChatInput({
         type: 'prompt' as const,
       }));
 
-    const all = [...toolItems, ...skillItems, ...promptItems];
+    const all = [...skillItems, ...promptItems];
     if (!slashQuery) return all.slice(0, 10);
 
     return all
@@ -76,7 +63,7 @@ export function useChatInput({
         return haystack.includes(slashQuery);
       })
       .slice(0, 10);
-  }, [tools, skills, promptTemplates, slashQuery]);
+  }, [skills, promptTemplates, slashQuery]);
 
   const promptMenuOpen = slashQuery !== null && promptSuggestions.length > 0 && !isLoading;
 
@@ -87,7 +74,8 @@ export function useChatInput({
   const applyPromptSuggestion = useCallback((suggestion: PromptSuggestion) => {
     if (suggestion.type === 'skill') {
       const skillId = suggestion.id.replace('skill-', '');
-      onActivateSkill?.(skillId);
+      const skill = skills.find((s: any) => s.id === skillId);
+      onActivateSkill?.(skillId, skill?.autoMessage);
       setInput('');
       requestAnimationFrame(() => inputRef.current?.focus());
       setSelectedPromptIndex(0);

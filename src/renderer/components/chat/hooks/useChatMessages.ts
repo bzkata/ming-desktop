@@ -13,6 +13,7 @@ interface SendMessageParams {
   model?: string;
   resetMessages?: boolean;
   forceNewConversation?: boolean;
+  extraSkillIds?: string[];
 }
 
 export function useChatMessages({
@@ -47,6 +48,7 @@ export function useChatMessages({
     model,
     resetMessages = false,
     forceNewConversation = false,
+    extraSkillIds,
   }: SendMessageParams) => {
     if (isLoading) return;
 
@@ -180,6 +182,24 @@ export function useChatMessages({
     const removeToolEvent = window.electronAPI.conversations.onStreamToolEvent((data) => {
       if (data.conversationId !== convId) return;
 
+      if (data.event === 'context') {
+        setExecutionState(prev => ({
+          ...prev,
+          steps: [
+            ...prev.steps,
+            {
+              id: `context-${data.timestamp}`,
+              type: 'request',
+              timestamp: data.timestamp,
+              title: 'System Prompt',
+              detail: data.detail || '',
+              status: 'done',
+            },
+          ],
+        }));
+        return;
+      }
+
       if (data.event === 'tool_start') {
         setExecutionState(prev => ({
           ...prev,
@@ -230,9 +250,12 @@ export function useChatMessages({
     });
 
     if (!convId) return;
-    // Send with null agentId — direct LLM + tools mode
-    const skillIds = activeSkills.get(convId) || [];
-    window.electronAPI.conversations.chat(convId, null, message, model || selectedModel || undefined, skillIds.length > 0 ? skillIds : undefined);
+    // Merge active skills with any extra skills passed in (e.g. from autoMessage)
+    const stateSkillIds = activeSkills.get(convId) || [];
+    const merged = extraSkillIds?.length
+      ? [...new Set([...stateSkillIds, ...extraSkillIds])]
+      : stateSkillIds;
+    window.electronAPI.conversations.chat(convId, null, message, model || selectedModel || undefined, merged.length > 0 ? merged : undefined);
   }, [isLoading, currentConversationId, selectedModel, activeConversationRef, setCurrentConversationId, setSelectedModel, setExecutionState, getLatestConversations, loadConversationMessages, setConversations, loadConversations, activeSkills]);
 
   const activateSkill = useCallback((convId: string, skillId: string) => {

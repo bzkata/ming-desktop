@@ -28,6 +28,7 @@ export interface Skill {
   description: string;
   prompt: string;
   enabled: boolean;
+  autoMessage?: string;
   sourcePath?: string;
   sourceType?: string;
   createdAt: string;

@@ -4,13 +4,14 @@ import { ToolExecutor } from '../tools/ToolExecutor';
 import { Logger } from '../utils/Logger';
 
 export interface ToolStreamEvent {
-  event: 'tool_start' | 'tool_result' | 'tool_error';
-  toolName: string;
+  event: 'tool_start' | 'tool_result' | 'tool_error' | 'context';
+  toolName?: string;
   args?: Record<string, any>;
   result?: string;
   error?: string;
   duration?: number;
   timestamp: number;
+  detail?: string;
 }
 
 export interface ChatRequest {
@@ -54,6 +55,13 @@ export class ChatEngine {
   ): Promise<void> {
     try {
       const { messages, toolDefs } = this.buildContext(req);
+
+      callbacks.onToolEvent({
+        event: 'context',
+        timestamp: Date.now(),
+        detail: messages[0]?.content || '',
+        args: { tools: toolDefs.map(t => t.function.name), messageCount: messages.length },
+      });
 
       const providerId = this.llmManager.getDefaultProviderId();
       if (!providerId) throw new Error('No LLM providers configured');
@@ -105,20 +113,20 @@ export class ChatEngine {
   private buildContext(req: ChatRequest): { messages: ChatMessage[]; toolDefs: ToolDefinition[] } {
     const agent = req.agentId ? this.loadAgent(req.agentId) : undefined;
 
-    let systemContent = agent?.systemPrompt || 'You are a helpful assistant.';
+    let systemContent: string;
+    const injectedSkills = req.injectedSkills?.length ? this.loadSkills(req.injectedSkills) : [];
+    const agentSkills = !injectedSkills.length && agent?.skills?.length ? this.loadSkills(agent.skills) : [];
+    const activeSkills = injectedSkills.length ? injectedSkills : agentSkills;
 
-    if (req.injectedSkills && req.injectedSkills.length > 0) {
-      const skills = this.loadSkills(req.injectedSkills);
-      if (skills.length > 0) {
-        const skillContent = skills.map(s => `Skill: ${s.name}\n${s.prompt}`).join('\n\n');
-        systemContent = `${systemContent}\n\nEnabled skills:\n${skillContent}`;
+    if (agent) {
+      systemContent = agent.systemPrompt;
+      if (activeSkills.length > 0) {
+        systemContent += '\n\n' + activeSkills.map(s => s.prompt).join('\n\n');
       }
-    } else if (agent?.skills && agent.skills.length > 0) {
-      const skills = this.loadSkills(agent.skills);
-      if (skills.length > 0) {
-        const skillContent = skills.map(s => `Skill: ${s.name}\n${s.prompt}`).join('\n\n');
-        systemContent = `${systemContent}\n\nEnabled skills:\n${skillContent}`;
-      }
+    } else if (activeSkills.length > 0) {
+      systemContent = activeSkills.map(s => s.prompt).join('\n\n');
+    } else {
+      systemContent = 'You are a helpful assistant.';
     }
 
     const history = this.loadHistory(req.conversationId, DEFAULT_HISTORY_LIMIT);

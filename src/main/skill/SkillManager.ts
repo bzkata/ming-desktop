@@ -27,6 +27,7 @@ export class SkillManager extends EventEmitter {
         name: row.name,
         description: row.description || '',
         prompt: row.prompt || '',
+        autoMessage: row.auto_message || undefined,
         enabled: !!row.enabled,
         sourcePath: row.source_path || undefined,
         sourceType: row.source_type || undefined,
@@ -327,26 +328,27 @@ export class SkillManager extends EventEmitter {
   }
 
   private ensureBuiltInSkills(): void {
-    const builtInSkills: Array<{ id: string; name: string; description: string; prompt: string }> = [
+    const builtInSkills: Array<{ id: string; name: string; description: string; prompt: string; autoMessage?: string }> = [
       {
         id: 'builtin-daily-reporter',
         name: '日报生成器',
         description: '根据 Git 提交记录生成工作日报',
         prompt: DEFAULT_DAILY_REPORTER_SYSTEM_PROMPT,
+        autoMessage: '生成今天的工作日报',
       },
     ];
 
     for (const def of builtInSkills) {
       if (this.skills.has(def.id)) {
-        // Update prompt if it changed
+        // Only sync autoMessage, never overwrite user-edited prompt
         const existing = this.skills.get(def.id)!;
-        if (existing.prompt !== def.prompt) {
-          existing.prompt = def.prompt;
+        if (existing.autoMessage !== def.autoMessage) {
+          existing.autoMessage = def.autoMessage;
           existing.updatedAt = new Date().toISOString();
           const db = getDatabase();
-          db.prepare('UPDATE skills SET prompt = ?, updated_at = ? WHERE id = ?')
-            .run(def.prompt, existing.updatedAt, def.id);
-          Logger.info(`Updated built-in skill: ${def.name}`);
+          db.prepare('UPDATE skills SET auto_message = ?, updated_at = ? WHERE id = ?')
+            .run(def.autoMessage || null, existing.updatedAt, def.id);
+          Logger.info(`Updated built-in skill metadata: ${def.name}`);
         }
         continue;
       }
@@ -356,6 +358,7 @@ export class SkillManager extends EventEmitter {
         name: def.name,
         description: def.description,
         prompt: def.prompt,
+        autoMessage: def.autoMessage,
         enabled: true,
         sourcePath: undefined,
         sourceType: 'builtin',
@@ -366,11 +369,11 @@ export class SkillManager extends EventEmitter {
       this.skills.set(skill.id, skill);
       const db = getDatabase();
       db.prepare(`
-        INSERT INTO skills (id, name, description, prompt, enabled, source_path, source_type, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO skills (id, name, description, prompt, enabled, source_path, source_type, auto_message, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         skill.id, skill.name, skill.description, skill.prompt,
-        1, null, skill.sourceType,
+        1, null, skill.sourceType, skill.autoMessage || null,
         skill.createdAt, skill.updatedAt,
       );
       Logger.info(`Created built-in skill: ${def.name}`);
