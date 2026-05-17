@@ -2,6 +2,7 @@ import { Send, Square, Cpu, FileText, Wrench, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { ActiveSkillBadges } from './ActiveSkillBadges';
 import type { Agent, LLMProvider, PromptSuggestion } from './types';
 
 interface ChatInputProps {
@@ -22,6 +23,8 @@ interface ChatInputProps {
   onAbort: () => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   onApplyPromptSuggestion: (suggestion: PromptSuggestion) => void;
+  activeSkillBadges: { id: string; name: string }[];
+  onRemoveSkill: (skillId: string) => void;
 }
 
 export default function ChatInput({
@@ -39,6 +42,8 @@ export default function ChatInput({
   onAbort,
   onKeyDown,
   onApplyPromptSuggestion,
+  activeSkillBadges,
+  onRemoveSkill,
 }: ChatInputProps) {
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value);
@@ -128,6 +133,7 @@ export default function ChatInput({
 
       {/* Input container */}
       <div className="rounded-2xl border border-[hsl(var(--border))] bg-[var(--surface)] p-3 transition-all focus-within:border-primary/50 focus-within:shadow-[0_0_0_2px_hsl(var(--primary)/0.1)]">
+        <ActiveSkillBadges skills={activeSkillBadges} onRemove={onRemoveSkill} />
         <div className="relative flex gap-3">
           {/* Slash menu */}
           <AnimatePresence>
