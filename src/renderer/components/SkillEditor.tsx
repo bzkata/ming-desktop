@@ -6,7 +6,8 @@ import type { Skill } from '../../shared/types';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { ArrowLeft, Save, Check } from 'lucide-react';
+import { Textarea } from './ui/textarea';
+import { ArrowLeft, Save, Check, PanelRightOpen, PanelRightClose } from 'lucide-react';
 
 interface SkillEditorProps {
   skill: Skill;
@@ -21,6 +22,7 @@ export default function SkillEditor({ skill, onBack, onSaved }: SkillEditorProps
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [savedOnce, setSavedOnce] = useState(false);
+  const [showPreview, setShowPreview] = useState(true);
   const isDark = document.documentElement.classList.contains('dark');
 
   // Sync content from parent if skill changes
@@ -93,6 +95,14 @@ export default function SkillEditor({ skill, onBack, onSaved }: SkillEditorProps
             </span>
           )}
           <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setShowPreview(!showPreview)}
+            title={showPreview ? '关闭预览' : '打开预览'}
+          >
+            {showPreview ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
+          </Button>
+          <Button
             onClick={handleSave}
             disabled={saving || !name.trim() || !dirty}
             size="sm"
@@ -105,21 +115,22 @@ export default function SkillEditor({ skill, onBack, onSaved }: SkillEditorProps
       </div>
 
       {/* Metadata */}
-      <div className="flex items-center gap-4 px-4 py-2 border-b border-[hsl(var(--border))] bg-[var(--surface-hover)]">
-        <div className="flex items-center gap-2">
-          <Label className="text-xs text-muted-foreground whitespace-nowrap">描述</Label>
-          <Input
+      <div className="flex items-start gap-4 px-4 py-2 border-b border-[hsl(var(--border))] bg-[var(--surface-hover)]">
+        <div className="flex items-start gap-2 flex-1">
+          <Label className="text-xs text-muted-foreground whitespace-nowrap pt-1.5">描述</Label>
+          <Textarea
             value={description}
             onChange={(e) => { setDescription(e.target.value); setDirty(true); }}
-            placeholder="一句话描述 skill 用途"
-            className="h-7 text-sm border-none shadow-none bg-transparent focus-visible:ring-0"
+            placeholder="描述 skill 的用途和使用场景"
+            className="min-h-[40px] max-h-[80px] text-sm border-none shadow-none bg-transparent focus-visible:ring-0 resize-y p-1"
+            rows={1}
           />
         </div>
       </div>
 
       {/* Split view: Monaco editor + Markdown preview */}
       <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 min-w-0">
+        <div className={`min-w-0 ${showPreview ? 'flex-1' : 'flex-1'}`}>
           <Editor
             height="100%"
             language="markdown"
@@ -145,12 +156,16 @@ export default function SkillEditor({ skill, onBack, onSaved }: SkillEditorProps
             }}
           />
         </div>
-        <div className="w-px bg-[hsl(var(--border))]" />
-        <div className="flex-1 min-w-0 overflow-y-auto p-6 prose prose-sm dark:prose-invert max-w-none">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {content}
-          </ReactMarkdown>
-        </div>
+        {showPreview && (
+          <>
+            <div className="w-px bg-[hsl(var(--border))]" />
+            <div className="flex-1 min-w-0 overflow-y-auto p-6 prose prose-sm dark:prose-invert max-w-none">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {content}
+              </ReactMarkdown>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
