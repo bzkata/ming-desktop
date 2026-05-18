@@ -1,11 +1,12 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import Vditor from 'vditor';
+import { useState, useEffect, useCallback } from 'react';
+import Editor from '@monaco-editor/react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { Skill } from '../../shared/types';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { ArrowLeft, Save, Check } from 'lucide-react';
-import 'vditor/dist/index.css';
 
 interface SkillEditorProps {
   skill: Skill;
@@ -20,63 +21,11 @@ export default function SkillEditor({ skill, onBack, onSaved }: SkillEditorProps
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [savedOnce, setSavedOnce] = useState(false);
-  const vditorRef = useRef<Vditor | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  // Initialize Vditor
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    const vditor = new Vditor(containerRef.current, {
-      height: '100%',
-      mode: 'sv',
-      toolbar: [
-        'headings', 'bold', 'italic', 'strike', '|',
-        'list', 'ordered-list', 'check', '|',
-        'quote', 'code', 'inline-code', '|',
-        'link', 'table', '|',
-        'undo', 'redo', '|',
-        'outline', 'preview', 'fullscreen',
-      ],
-      placeholder: '输入 Skill prompt 内容...',
-      value: content,
-      cache: { enable: false },
-      preview: { mode: 'both' },
-      theme: document.documentElement.classList.contains('dark') ? 'dark' : 'classic',
-      input: (value) => {
-        setContent(value);
-        setDirty(true);
-      },
-      after: () => {
-        vditorRef.current = vditor;
-      },
-    });
-
-    return () => {
-      vditorRef.current?.destroy();
-      vditorRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Reactively sync Vditor theme with app dark/light mode
-  useEffect(() => {
-    const el = document.documentElement;
-    const observer = new MutationObserver(() => {
-      const isDark = el.classList.contains('dark');
-      const theme = isDark ? 'dark' : 'classic';
-      vditorRef.current?.setTheme(theme);
-    });
-    observer.observe(el, { attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
-  }, []);
+  const isDark = document.documentElement.classList.contains('dark');
 
   // Sync content from parent if skill changes
   useEffect(() => {
-    if (vditorRef.current && skill.prompt !== content) {
-      vditorRef.current.setValue(skill.prompt);
-      setContent(skill.prompt);
-    }
+    setContent(skill.prompt);
     setName(skill.name);
     setDescription(skill.description);
     setDirty(false);
@@ -168,9 +117,40 @@ export default function SkillEditor({ skill, onBack, onSaved }: SkillEditorProps
         </div>
       </div>
 
-      {/* Editor */}
-      <div className="flex-1 overflow-hidden">
-        <div ref={containerRef} className="h-full" />
+      {/* Split view: Monaco editor + Markdown preview */}
+      <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 min-w-0">
+          <Editor
+            height="100%"
+            language="markdown"
+            theme={isDark ? 'vs-dark' : 'vs'}
+            value={content}
+            onChange={(value) => {
+              setContent(value || '');
+              setDirty(true);
+            }}
+            options={{
+              minimap: { enabled: false },
+              lineNumbers: 'on',
+              wordWrap: 'on',
+              fontSize: 14,
+              scrollBeyondLastLine: false,
+              padding: { top: 12 },
+              renderLineHighlight: 'line',
+              overviewRulerBorder: false,
+              scrollbar: {
+                verticalScrollbarSize: 8,
+                horizontalScrollbarSize: 8,
+              },
+            }}
+          />
+        </div>
+        <div className="w-px bg-[hsl(var(--border))]" />
+        <div className="flex-1 min-w-0 overflow-y-auto p-6 prose prose-sm dark:prose-invert max-w-none">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {content}
+          </ReactMarkdown>
+        </div>
       </div>
     </div>
   );
