@@ -474,6 +474,69 @@ export default function Dashboard({ onStartChat }: DashboardProps) {
           </CardContent>
         </Card>
 
+        {/* Time range selector — controls repos activity + commit stats below */}
+        <div className="flex items-center gap-3 mb-6">
+          <CalendarIcon size={16} className="text-muted-foreground" />
+          <span className="text-sm font-medium text-muted-foreground">统计范围</span>
+          <Select value={timeRange} onValueChange={setTimeRange}>
+            <SelectTrigger className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="today">今天</SelectItem>
+              <SelectItem value="yesterday">昨天</SelectItem>
+              <SelectItem value="day_before_yesterday">前天</SelectItem>
+              <SelectItem value="week">This Week</SelectItem>
+              <SelectItem value="custom">自定义</SelectItem>
+            </SelectContent>
+          </Select>
+          {timeRange === 'custom' && (
+            <>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={cn('h-7 gap-1 text-xs', !customSince && 'text-muted-foreground')}
+                  >
+                    <CalendarIcon size={12} />
+                    {customSince ? format(customSince, 'MM/dd') : '开始'}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={customSince}
+                    onSelect={setCustomSince}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+              <span className="text-xs text-muted-foreground">~</span>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={cn('h-7 gap-1 text-xs', !customUntil && 'text-muted-foreground')}
+                  >
+                    <CalendarIcon size={12} />
+                    {customUntil ? format(customUntil, 'MM/dd') : '结束'}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={customUntil}
+                    onSelect={setCustomUntil}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </>
+          )}
+        </div>
+
         {/* Work Paths and Git Repos - Side by Side */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           {/* Work Paths Management */}
@@ -635,66 +698,9 @@ export default function Dashboard({ onStartChat }: DashboardProps) {
                 <div className="p-3 rounded-lg bg-accent">
                   <GitBranch size={24} className="text-primary" />
                 </div>
-                <Select value={timeRange} onValueChange={setTimeRange}>
-                  <SelectTrigger className="w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="today">今天</SelectItem>
-                    <SelectItem value="yesterday">昨天</SelectItem>
-                    <SelectItem value="day_before_yesterday">前天</SelectItem>
-                    <SelectItem value="week">This Week</SelectItem>
-                    <SelectItem value="custom">自定义</SelectItem>
-                  </SelectContent>
-                </Select>
               </div>
               <div className="text-3xl font-bold mb-1 text-foreground">{stats.totalCommits}</div>
               <div className="text-sm text-muted-foreground">Commits · {stats.totalRepos} Repos</div>
-              {timeRange === 'custom' && (
-                <div className="flex items-center gap-2 mt-3 pt-3 border-t">
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className={cn('h-7 gap-1 text-xs flex-1', !customSince && 'text-muted-foreground')}
-                      >
-                        <CalendarIcon size={12} />
-                        {customSince ? format(customSince, 'MM/dd') : '开始'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={customSince}
-                        onSelect={setCustomSince}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                  <span className="text-xs text-muted-foreground">~</span>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className={cn('h-7 gap-1 text-xs flex-1', !customUntil && 'text-muted-foreground')}
-                      >
-                        <CalendarIcon size={12} />
-                        {customUntil ? format(customUntil, 'MM/dd') : '结束'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={customUntil}
-                        onSelect={setCustomUntil}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-              )}
             </CardContent>
           </Card>
         </div>
